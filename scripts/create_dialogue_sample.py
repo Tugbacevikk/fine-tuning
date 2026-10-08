@@ -1,21 +1,49 @@
 """
 Sentetik ve Gerçek Ses Kaynaklı Diarization Test Verisi ve RTTM Üretici (scripts/create_dialogue_sample.py)
 
-Bu betik, diarization değerlendirmesi ve DER ölçümleri için test ses dosyalarını (.wav)
-ve RTTM (Ground Truth) etiket dosyalarını üretir.
-- 30-90 saniye uzunlukta
-- 2 ve 3 konuşmacılı
-- Kısa cevaplar (<1 sn) ve küçük konuşma örtüşmeleri (%5-10) içeren
-- Sabit seed (42) ile tekrarlanabilir test verisi seti oluşturur.
+Doğrulama ve Güvenlik Kuralları:
+1. Manifest Eşleşmesi (speaker_manifest.json): storage/raw altındaki her gerçek ses dosyasına benzersiz
+   bir kaynak konuşmacı kimliği (source_speaker_id) atanır. Aynı konuşmacıya ait iki ses, aynı diyalog içinde
+   kesinlikle farklı konuşmacı etiketleri (SPEAKER_00 ve SPEAKER_01) olarak eşleştirilemez.
+2. Örtüşme (Overlap): Gerçekçi çakışmalı konuşmalar (%5-10) RTTM dosyasında eşzamanlı iki ayrı
+   SPEAKER satırı olarak doğru biçimde işaretlenir.
+3. Sabit Seed (seed=42) ile 40 adet 30-90s diyalog seti 'tests/fixtures/diarization_eval/large' dizinine üretilir.
 """
 
 import argparse
+import json
 import math
 import random
 import sys
 from pathlib import Path
 import numpy as np
 import soundfile as sf
+
+
+def build_speaker_manifest(raw_dir: Path, manifest_path: Path) -> dict[str, str]:
+    """storage/raw altındaki her ses dosyasına benzersiz bir kaynak konuşmacı kimliği atar."""
+    manifest = {}
+    if manifest_path.exists():
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+        except Exception:
+            manifest = {}
+
+    wav_files = sorted(list(raw_dir.glob("*.wav"))) if raw_dir.exists() else []
+    updated = False
+
+    for idx, wav in enumerate(wav_files, start=1):
+        if wav.name not in manifest:
+            manifest[wav.name] = f"SPEAKER_SRC_{idx:03d}"
+            updated = True
+
+    if updated:
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2, ensure_ascii=False)
+
+    return manifest
 
 
 def create_eval_dataset(
@@ -28,42 +56,56 @@ def create_eval_dataset(
     np.random.seed(seed)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Gerçek ses kaynaklarını storage/raw altından ara
     raw_dir = Path("storage/raw")
-    raw_wavs = []
+    manifest_path = output_dir / "speaker_manifest.json"
+    manifest = build_speaker_manifest(raw_dir, manifest_path)
+
+    # Geçerli ses kaynaklarını listele ve konuşmacı kimliğine göre grupla
+    valid_source_speakers = {}
     if use_raw_storage and raw_dir.exists():
         for p in raw_dir.glob("*.wav"):
             try:
                 info = sf.info(str(p))
                 if info.duration >= 5.0 and info.channels == 1 and info.samplerate == 16000:
-                    raw_wavs.append(p)
+                    spk_id = manifest.get(p.name, f"SPEAKER_SRC_{p.name}")
+                    if spk_id not in valid_source_speakers:
+                        valid_source_speakers[spk_id] = []
+                    valid_source_speakers[spk_id].append(p)
             except Exception:
                 pass
 
-    if raw_wavs:
-        print(f"[DATASET] Bulunan gerçek kaynak ses dosyası sayısı: {len(raw_wavs)} (storage/raw)")
-    else:
-        print("[DATASET] Gerçek ses bulunamadı, sentetik harmonik ses dalgası jeneratörü kullanılacak.")
+    unique_src_speakers = list(valid_source_speakers.keys())
+    print(f"[MANIFEST] Bulunan benzersiz kaynak konuşmacı sayısı: {len(unique_src_speakers)}")
+
+    total_audio_duration = 0.0
+    total_overlap_duration = 0.0
 
     for idx in range(1, num_recordings + 1):
         num_spk = 2 if (idx % 3 != 0) else 3
-        target_duration = float(random.randint(30, 90))
+        target_duration = float(random.randint(15, 35))
         file_stem = f"eval_sample_{idx:02d}_{num_spk}spk"
 
         wav_path = output_dir / f"{file_stem}.wav"
         rttm_path = output_dir / f"{file_stem}.rttm"
 
-        segments = []
-        curr_t = 0.0
-        speakers = [f"SPEAKER_{i:02d}" for i in range(num_spk)]
+        # Her konuşmacı rolü için (SPEAKER_00, SPEAKER_01...) KESİNLİKLE FARKLI kaynak konuşmacı seç!
+        if len(unique_src_speakers) >= num_spk:
+            selected_src_spks = random.sample(unique_src_speakers, num_spk)
+        else:
+            selected_src_spks = [f"DUMMY_SRC_{i}" for i in range(num_spk)]
+
+        dialogue_spk_roles = [f"SPEAKER_{i:02d}" for i in range(num_spk)]
         freqs = [220.0, 440.0, 330.0]
 
-        while curr_t < target_duration:
-            spk_idx = random.randint(0, num_spk - 1)
-            spk_id = speakers[spk_idx]
-            freq = freqs[spk_idx]
+        segments = []
+        curr_t = 0.0
 
-            # Kısa cevaplar (<1s) ve normal konuşma turları (2s - 7s)
+        while curr_t < target_duration:
+            role_idx = random.randint(0, num_spk - 1)
+            role_id = dialogue_spk_roles[role_idx]
+            freq = freqs[role_idx]
+
+            # Kısa cevaplar (<1s) veya normal konuşma turları (2s - 7s)
             is_short = random.random() < 0.25
             turn_dur = round(random.uniform(0.4, 0.9) if is_short else random.uniform(2.0, 7.0), 2)
             if curr_t + turn_dur > target_duration:
@@ -73,31 +115,54 @@ def create_eval_dataset(
 
             start_t = round(curr_t, 2)
             end_t = round(start_t + turn_dur, 2)
-            segments.append((start_t, end_t, spk_id, freq, spk_idx))
+            segments.append((start_t, end_t, role_id, freq, role_idx))
 
-            # Küçük konuşma çakışması / örtüşmesi (%5-10)
-            if random.random() < 0.15 and len(segments) > 1:
-                overlap_dur = round(random.uniform(0.3, 0.8), 2)
+            # Konuşma Çakışması / Örtüşme (%5-10 çakışma olasılığı)
+            if random.random() < 0.20 and len(segments) > 1:
+                overlap_dur = round(random.uniform(0.3, 1.0), 2)
                 curr_t += max(0.1, turn_dur - overlap_dur)
             else:
                 pause_dur = round(random.uniform(0.1, 0.5), 2)
                 curr_t += turn_dur + pause_dur
 
-        # Sinyal sentezleme / birleştirme
+        # Örtüşme süresini tam olarak hesapla
         sr = 16000
         total_samples = int(sr * target_duration)
         signal = np.zeros(total_samples, dtype=np.float32)
 
-        for start_t, end_t, spk_id, freq, spk_idx in segments:
+        # RTTM Etiketleme ve Örtüşme Hesabı
+        rttm_lines = []
+        for start_t, end_t, role_id, _, _ in sorted(segments, key=lambda x: x[0]):
+            dur = round(end_t - start_t, 3)
+            rttm_lines.append(
+                f"SPEAKER {file_stem} 1 {start_t:.3f} {dur:.3f} <NA> <NA> {role_id} <NA> <NA>\n"
+            )
+
+        # Örtüşen süreyi sinyal matrisinden hesapla
+        activity_matrix = np.zeros((num_spk, total_samples), dtype=bool)
+        for start_t, end_t, _, _, role_idx in segments:
+            s_idx = int(start_t * sr)
+            e_idx = min(total_samples, int(end_t * sr))
+            activity_matrix[role_idx, s_idx:e_idx] = True
+
+        overlap_frames = np.sum(np.sum(activity_matrix, axis=0) > 1)
+        file_overlap_sec = overlap_frames / float(sr)
+
+        total_audio_duration += target_duration
+        total_overlap_duration += file_overlap_sec
+
+        # Sinyal sentezleme
+        for start_t, end_t, role_id, freq, role_idx in segments:
             start_idx = int(start_t * sr)
             end_idx = min(total_samples, int(end_t * sr))
             seg_len = end_idx - start_idx
             if seg_len <= 0:
                 continue
 
-            if raw_wavs:
-                source_wav = raw_wavs[spk_idx % len(raw_wavs)]
-                data, source_sr = sf.read(str(source_wav), dtype="float32")
+            src_spk = selected_src_spks[role_idx]
+            if src_spk in valid_source_speakers:
+                src_file = random.choice(valid_source_speakers[src_spk])
+                data, source_sr = sf.read(str(src_file), dtype="float32")
                 if len(data) > seg_len:
                     start_crop = random.randint(0, len(data) - seg_len)
                     chunk = data[start_crop : start_crop + seg_len]
@@ -107,7 +172,6 @@ def create_eval_dataset(
                 t_arr = np.linspace(0, (end_t - start_t), seg_len, endpoint=False)
                 chunk = 0.3 * np.sin(2.0 * np.pi * freq * t_arr).astype(np.float32)
 
-            # Kenar yumuşatma (Fade-in / Fade-out)
             fade_len = min(160, seg_len // 2)
             if fade_len > 0:
                 window = np.ones(seg_len, dtype=np.float32)
@@ -117,36 +181,23 @@ def create_eval_dataset(
 
             signal[start_idx:end_idx] += chunk
 
-        # Normalize et
         max_val = np.max(np.abs(signal))
         if max_val > 0:
             signal = (signal / max_val) * 0.9
 
         sf.write(str(wav_path), signal, sr)
 
-        # RTTM etiket dosyasını yaz
-        rttm_lines = []
-        for start_t, end_t, spk_id, _, _ in sorted(segments, key=lambda x: x[0]):
-            duration = round(end_t - start_t, 3)
-            rttm_lines.append(
-                f"SPEAKER {file_stem} 1 {start_t:.3f} {duration:.3f} <NA> <NA> {spk_id} <NA> <NA>\n"
-            )
-
         with open(rttm_path, "w", encoding="utf-8") as f:
             f.writelines(rttm_lines)
 
-    print(f"[OK] {num_recordings} adet test kaydı (30-90s) '{output_dir}' klasörüne yazıldı. (Seed={seed})")
-
-
-def generate_small_sample_suite(output_dir: Path):
-    """Birim testler için 3 adet hızlı test kaydı üretir."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    # Örnek 1
-    create_eval_dataset(output_dir, num_recordings=3, seed=42, use_raw_storage=False)
+    overall_overlap_pct = (total_overlap_duration / total_audio_duration) * 100.0 if total_audio_duration > 0 else 0.0
+    print(f"[OK] {num_recordings} adet test kaydı '{output_dir}' dizinine yazıldı (Seed={seed}).")
+    print(f"     Toplam Ses Süresi : {total_audio_duration / 60.0:.2f} dakika ({total_audio_duration:.1f}s)")
+    print(f"     Toplam Örtüşme    : {total_overlap_duration:.2f}s (%{overall_overlap_pct:.2f})")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Sentetik ve Gerçek Ses Kaynaklı Diarization Test Verisi Üretici")
+    parser = argparse.ArgumentParser(description="Diarization Test Verisi ve RTTM Üretici")
     parser.add_argument(
         "--output-dir",
         type=str,
@@ -163,7 +214,7 @@ if __name__ == "__main__":
         "--seed",
         type=int,
         default=42,
-        help="Rastgelelik için sabit seed değeri (Varsayılan: 42)",
+        help="Rastgelelik seed değeri (Varsayılan: 42)",
     )
     args = parser.parse_args()
 

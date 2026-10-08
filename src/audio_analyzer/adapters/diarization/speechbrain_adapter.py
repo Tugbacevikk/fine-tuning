@@ -212,7 +212,8 @@ class SpeechBrainECAPADiarizer(IDiarizer):
             val_idx = 0
             for i in range(num_wins):
                 if val_idx < len(valid_indices) and i == valid_indices[val_idx]:
-                    last_lbl = raw_valid_labels[val_idx]
+                    if val_idx < len(raw_valid_labels):
+                        last_lbl = raw_valid_labels[val_idx]
                     val_idx += 1
                 raw_labels[i] = last_lbl
 
@@ -225,6 +226,14 @@ class SpeechBrainECAPADiarizer(IDiarizer):
                 final_labels = (
                     medfilt(raw_labels, kernel_size=k_size) if len(raw_labels) > 0 else raw_labels
                 )
+
+            effective_num_spk = num_speakers if num_speakers is not None else self.num_speakers
+            if (
+                effective_num_spk is not None
+                and len(np.unique(final_labels)) < min(effective_num_spk, len(unit_embs))
+                and len(np.unique(raw_labels)) >= min(effective_num_spk, len(unit_embs))
+            ):
+                final_labels = raw_labels
 
             segments: list[DiarizationSegment] = []
             current_spk = f"SPEAKER_{final_labels[0]:02d}"

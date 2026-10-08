@@ -251,6 +251,9 @@ def run_evaluation(
     avg_fa = float(np.mean(fa_values))
     avg_conf = float(np.mean(conf_values))
 
+    spk_matches = sum(1 for r in results if r["detected_num_speakers"] == r["gt_num_speakers"])
+    speaker_match_rate_pct = float(np.round((spk_matches / len(results)) * 100.0, 2))
+
     median_time = float(np.median(times))
     p95_time = float(np.percentile(times, 95))
     max_rss = float(np.max(rss_values))
@@ -275,6 +278,7 @@ def run_evaluation(
             "avg_missed_speech_percent": round(avg_miss, 2),
             "avg_false_alarm_percent": round(avg_fa, 2),
             "avg_speaker_confusion_percent": round(avg_conf, 2),
+            "speaker_match_rate_percent": speaker_match_rate_pct,
             "median_time_sec": round(median_time, 3),
             "p95_time_sec": round(p95_time, 3),
             "max_rss_mb": round(max_rss, 1),
@@ -289,17 +293,18 @@ def run_evaluation(
     print("\n" + "=" * 90)
     print(f"BENCHMARK SUMMARY RESULTS [{engine_name.upper()}]")
     print("=" * 90)
-    print(f" Toplam Test Dosyası  : {len(results)}")
-    print(f" Model Yükleme Süresi : {load_time_sec:.3f} saniye")
-    print(f" Ortalama DER ± Std   : %{avg_der:.2f} ± %{std_der:.2f}")
-    print(f"  - Missed Speech (Kaçırılan)   : %{avg_miss:.2f}")
-    print(f"  - False Alarm (Yanlış Alarm) : %{avg_fa:.2f}")
-    print(f"  - Speaker Confusion (Karışma): %{avg_conf:.2f}")
-    print(f" Medyan İşlem Süresi (P50)      : {median_time:.3f} saniye")
-    print(f" P95 İşlem Süresi (P95)         : {p95_time:.3f} saniye")
-    print(f" Maksimum RSS Bellek Kullanımı  : {max_rss:.1f} MB")
-    print(f" Fallback Oranı                 : %{fallback_rate_pct:.1f}")
-    print(f" JSON Rapor Dosyası             : {json_path.absolute()}")
+    print(f" Toplam Test Dosyası      : {len(results)}")
+    print(f" Model Yükleme Süresi     : {load_time_sec:.3f} saniye")
+    print(f" Ortalama DER ± Std       : %{avg_der:.2f} ± %{std_der:.2f}")
+    print(f"  - Missed Speech (Kaçırılan)       : %{avg_miss:.2f}")
+    print(f"  - False Alarm (Yanlış Alarm)     : %{avg_fa:.2f}")
+    print(f"  - Speaker Confusion (Karışma)    : %{avg_conf:.2f}")
+    print(f" Konuşmacı Sayısı Eşleşme Oranı     : %{speaker_match_rate_pct:.2f} ({spk_matches}/{len(results)})")
+    print(f" Medyan İşlem Süresi (P50)          : {median_time:.3f} saniye")
+    print(f" P95 İşlem Süresi (P95)             : {p95_time:.3f} saniye")
+    print(f" Maksimum RSS Bellek Kullanımı      : {max_rss:.1f} MB")
+    print(f" Fallback Oranı                     : %{fallback_rate_pct:.1f}")
+    print(f" JSON Rapor Dosyası                 : {json_path.absolute()}")
     print("=" * 90 + "\n")
 
 

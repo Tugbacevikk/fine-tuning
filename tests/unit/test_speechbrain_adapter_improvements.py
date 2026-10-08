@@ -75,3 +75,30 @@ def test_diarizer_distance_threshold_branch(monkeypatch):
         assert kwargs["n_clusters"] is None
     reset_settings()
 
+
+def test_num_speakers_preserved_against_medfilt_reduction():
+    """Doğrular: num_speakers=2 verildiğinde medfilt kısa konuşmacı turunu silip küme sayısını 1'e düşürürse raw_labels korunur."""
+    diarizer = SpeechBrainECAPADiarizer(num_speakers=2)
+    diarizer._classifier = MagicMock()
+    import torch
+
+    # 4 pencere segmenti, 2 ayrı konuşmacı
+    dummy_emb = torch.zeros((4, 1, 192), dtype=torch.float32)
+    dummy_emb[0:3, 0, 0] = 1.0  # SPEAKER_00
+    dummy_emb[3, 0, 1] = 1.0    # SPEAKER_01 (1 pencere)
+    diarizer._classifier.encode_batch.return_value = dummy_emb
+
+    dummy_audio = np.random.randn(16000 * 4).astype(np.float32)
+
+    with patch("sklearn.cluster.AgglomerativeClustering") as mock_clustering:
+        mock_instance = MagicMock()
+        mock_instance.fit_predict.return_value = np.array([0, 0, 0, 1])
+        mock_clustering.return_value = mock_instance
+
+        segments = diarizer.diarize(dummy_audio, num_speakers=2)
+        speakers = {s.speaker_id for s in segments}
+        assert len(speakers) == 2
+        assert "SPEAKER_00" in speakers
+        assert "SPEAKER_01" in speakers
+
+
