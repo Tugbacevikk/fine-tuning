@@ -1,14 +1,13 @@
 """
 Diarization Değerlendirme ve Baseline Ölçüm Scripti (scripts/evaluate_diarization.py)
 
-Belirtilen dizindeki (.wav + .rttm) diyalog kayıtları üzerinde belirtilen diarization
-motorunun performansını ölçer:
-- DER (Diarization Error Rate - pyannote.metrics, collar=0.25)
-- İşlem süresi (sn) ve RTF (Real-Time Factor)
-- Bellek Kullanımı (RSS MB - psutil)
-- Fallback kademe kullanımı (Primary vs Fallback)
-
-Çıktı: docs/benchmarks/diarization_<engine>_<tarih>.json + Konsol Özet Tablosu
+Değerlendirme Kuralları:
+- `--engine pyannote|ecapa|cluster|sherpa_onnx`: Motoru doğrudan adaptör sınıfıyla değerlendirir.
+- `--engine chain`: FallbackDiarizer üretim zincirini değerlendirir.
+- Herhangi bir kayıtta boş sonuç alınırsa veya yükleme başarısız olursa JSON YAZMADAN exit code 1 ile çıkar.
+- Model yükleme süresi (`load_time_sec`) ayrı ölçülür ve warm-up yapılır.
+- DER bileşenleri (missed speech, false alarm, speaker confusion) ayrı ayrı hesaplanır.
+- Çıktı: docs/benchmarks/diarization_<engine>_<tarih>.json + Konsol Özet Tablosu
 """
 
 import argparse
@@ -27,10 +26,8 @@ from pyannote.metrics.diarization import DiarizationErrorRate
 # Proje kök dizinini sys.path'e ekle
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from audio_analyzer.adapters.diarization.fallback_diarizer import FallbackDiarizer
-from audio_analyzer.adapters.diarization.speechbrain_adapter import SpeechBrainECAPADiarizer
-from audio_analyzer.domain.models import DeviceConfig
 from audio_analyzer.api.metrics import DIARIZATION_FALLBACK_COUNTER
+from audio_analyzer.domain.models import DeviceConfig
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("evaluate_diarization")
@@ -55,67 +52,104 @@ def parse_rttm(rttm_path: Path, uri: str) -> tuple[Annotation, int]:
     return annotation, len(speakers)
 
 
-def build_diarizer_engine(engine_name: str, device_config: DeviceConfig) -> FallbackDiarizer:
-    """İstenen ana motor ve varsayılan yedekler ile FallbackDiarizer zincirini kurar."""
-    fallback_ecapa = SpeechBrainECAPADiarizer(device_config=device_config)
-
+def load_single_engine(engine_name: str, device_config: DeviceConfig):
+    """Belirtilen motor adaptörünü doğrudan yükler (Fallback zinciri olmadan)."""
     if engine_name == "pyannote":
-        try:
-            from audio_analyzer.adapters.diarization.pyannote_adapter import PyannoteAudioAdapter
-            primary = PyannoteAudioAdapter(device_config=device_config)
-            # Motorun ısındırılması
-            primary._lazy_load_pipeline()
-            if primary._pipeline is None:
-                raise RuntimeError(
-                    "Pyannote 3.1 modeli yüklenemedi (Model dosyaları veya yerel konfigürasyon eksik)."
-                )
-            fallbacks = [fallback_ecapa]
-        except Exception as e:
-            logger.error("Pyannote 3.1 motoru başlatılamadı: %s", e)
-            sys.exit(1)
+        from audio_analyzer.adapters.diarization.pyannote_adapter import PyannoteAudioAdapter
+        adapter = PyannoteAudioAdapter(device_config=device_config)
+        adapter._lazy_load_pipeline()
+        if adapter._pipeline is None:
+            raise RuntimeError(
+                "Pyannote 3.1 yerel modelleri/konfigürasyonu yüklenemedi. Lütfen modellerin varlığını kontrol edin."
+            )
+        return adapter
     elif engine_name == "ecapa":
-        primary = fallback_ecapa
-        fallbacks = []
+        from audio_analyzer.adapters.diarization.speechbrain_adapter import SpeechBrainECAPADiarizer
+        adapter = SpeechBrainECAPADiarizer(device_config=device_config)
+        adapter._load_classifier()
+        if adapter._classifier is None:
+            raise RuntimeError("SpeechBrain ECAPA modeli yüklenemedi.")
+        return adapter
     elif engine_name == "cluster":
         from audio_analyzer.adapters.diarization.cluster_diarizer import LocalSpectralClusterDiarizer
-        primary = LocalSpectralClusterDiarizer()
-        fallbacks = []
+        return LocalSpectralClusterDiarizer()
     elif engine_name == "sherpa_onnx":
         try:
             from audio_analyzer.adapters.diarization.sherpa_onnx_adapter import SherpaOnnxDiarizer
-            primary = SherpaOnnxDiarizer(device_config=device_config)
-            fallbacks = [fallback_ecapa]
+            return SherpaOnnxDiarizer(device_config=device_config)
         except Exception as e:
-            logger.error("Sherpa-ONNX motoru başlatılamadı: %s", e)
-            sys.exit(1)
+            raise RuntimeError(f"Sherpa-ONNX motoru yüklenemedi: {e}")
     else:
-        logger.error("Bilinmeyen diarization motoru: %s", engine_name)
-        sys.exit(1)
+        raise ValueError(f"Geçersiz motor adı: {engine_name}")
 
+
+def load_chain_engine(device_config: DeviceConfig):
+    """Üretim ortamı FallbackDiarizer zincirini yükler."""
+    from audio_analyzer.adapters.diarization.fallback_diarizer import FallbackDiarizer
+    from audio_analyzer.adapters.diarization.pyannote_adapter import PyannoteAudioAdapter
+    from audio_analyzer.adapters.diarization.speechbrain_adapter import SpeechBrainECAPADiarizer
+
+    ecapa = SpeechBrainECAPADiarizer(device_config=device_config)
+    try:
+        primary = PyannoteAudioAdapter(device_config=device_config)
+        primary._lazy_load_pipeline()
+    except Exception:
+        primary = ecapa
+
+    fallbacks = [ecapa] if primary != ecapa else []
     return FallbackDiarizer(primary_diarizer=primary, fallback_diarizers=fallbacks)
 
 
-def run_evaluation(data_dir: Path, engine_name: str, unknown_speakers: bool, collar: float = 0.25):
+def run_evaluation(
+    data_dir: Path,
+    engine_name: str,
+    unknown_speakers: bool,
+    collar: float = 0.25,
+    seed: int = 42,
+):
     wav_files = sorted(list(data_dir.glob("*.wav")))
     if not wav_files:
-        logger.error("Dizinde hiç .wav dosyası bulunamadı: %s", data_dir.absolute())
+        logger.error("[ERROR] Dizinde hiç .wav dosyası bulunamadı: %s", data_dir.absolute())
         sys.exit(1)
 
     device_config = DeviceConfig()
-    diarizer = build_diarizer_engine(engine_name, device_config)
+    logger.info("Motor başlatılıyor: %s ...", engine_name)
+
+    # 1. Model Yükleme ve Warm-up Süresi Ölçümü
+    start_load_time = time.perf_counter()
+    try:
+        if engine_name == "chain":
+            diarizer = load_chain_engine(device_config)
+        else:
+            diarizer = load_single_engine(engine_name, device_config)
+    except Exception as load_err:
+        logger.error("[ERROR] Motor yükleme başarısız oldu (%s): %s", engine_name, load_err)
+        sys.exit(1)
+
+    # Warm-up (Süre ölçümünden muaf)
+    warmup_wav = wav_files[0]
+    try:
+        diarizer.diarize(str(warmup_wav), num_speakers=2)
+    except Exception as warmup_err:
+        logger.warning("Warm-up uyarısı: %s", warmup_err)
+    load_time_sec = round(time.perf_counter() - start_load_time, 3)
+
+    logger.info("Motor başarıyla yüklendi ve ısındırıldı (Yükleme süresi: %.3f sn).", load_time_sec)
 
     der_metric = DiarizationErrorRate(collar=collar)
     process = psutil.Process()
 
     results = []
-    total_fallbacks = 0
+    fallback_count = 0
 
-    print("\n" + "=" * 80)
+    print("\n" + "=" * 90)
     print(f"DIARIZATION BENCHMARK EVALUATION: [{engine_name.upper()}]")
-    print(f"Veri Dizini: {data_dir.absolute()}")
-    print(f"Konuşmacı Sayısı Modu: {'Bilinmiyor (None)' if unknown_speakers else 'RTTM Ground-Truth'}")
-    print(f"DER Collar: {collar}s")
-    print("=" * 80 + "\n")
+    print(f"Veri Dizini        : {data_dir.absolute()}")
+    print(f"Test Dosya Sayısı  : {len(wav_files)}")
+    print(f"Konuşmacı Sayısı   : {'Bilinmiyor (None)' if unknown_speakers else 'RTTM Ground-Truth'}")
+    print(f"DER Collar         : {collar}s")
+    print(f"Model Load Time    : {load_time_sec}s")
+    print("=" * 90 + "\n")
 
     for wav_path in wav_files:
         rttm_path = wav_path.with_suffix(".rttm")
@@ -130,43 +164,63 @@ def run_evaluation(data_dir: Path, engine_name: str, unknown_speakers: bool, col
         ref_annotation, gt_num_speakers = parse_rttm(rttm_path, file_stem)
         target_num_speakers = None if unknown_speakers else gt_num_speakers
 
-        # İşlem süresi ve RSS bellek ölçümü
+        # İşlem süresi ve RSS bellek ölçümü (Yükleme süresi dahil DEĞİL)
         start_time = time.perf_counter()
-        start_rss = process.memory_info().rss / (1024 * 1024)
-
-        # Fallback takibi için sayaç öncesi değer
         try:
             hyp_segments = diarizer.diarize(str(wav_path), num_speakers=target_num_speakers)
         except Exception as err:
-            logger.error("Diarization hatası (%s): %s", wav_path.name, err)
-            hyp_segments = []
+            logger.error("[ERROR] %s dosyasında diarization hatası fırlatıldı: %s", wav_path.name, err)
+            sys.exit(1)
 
         elapsed = time.perf_counter() - start_time
         end_rss = process.memory_info().rss / (1024 * 1024)
         rtf = elapsed / audio_duration if audio_duration > 0 else 0.0
 
-        # Hipotez Annotation dönüştürme
+        # SIFIR SEGMENT KONTROLÜ (Exit 1 ve JSON yazmama garantisi)
+        if not hyp_segments or len(hyp_segments) == 0:
+            logger.error(
+                "[ERROR] '%s' motoru '%s' dosyası için BOŞ segment listesi döndürdü. Değerlendirme iptal ediliyor (Exit 1).",
+                engine_name,
+                wav_path.name,
+            )
+            sys.exit(1)
+
+        # Hipotez Annotation ve Konuşmacı Sayısı Tespiti
         hyp_annotation = Annotation(uri=file_stem)
+        detected_speakers = set()
         for seg in hyp_segments:
             hyp_annotation[Segment(seg.start_time, seg.end_time)] = seg.speaker_id
+            detected_speakers.add(seg.speaker_id)
 
-        # DER Hesaplama
-        try:
-            der_score = der_metric(ref_annotation, hyp_annotation)
-        except Exception as der_err:
-            logger.warning("DER hesaplama uyarısı (%s): %s", file_stem, der_err)
-            der_score = 1.0
+        # Detaylı DER Bileşenleri Hesaplama
+        comp = der_metric(ref_annotation, hyp_annotation, detailed=True)
+        total_gt_sec = comp.get("total", 0.0)
 
-        fallback_used = len(hyp_segments) == 0 or (
-            hasattr(diarizer, "primary") and len(hyp_segments) > 0 and False  # track primary vs fallback
-        )
+        if total_gt_sec > 0:
+            missed_speech_pct = (comp.get("missed detection", 0.0) / total_gt_sec) * 100.0
+            false_alarm_pct = (comp.get("false alarm", 0.0) / total_gt_sec) * 100.0
+            speaker_confusion_pct = (comp.get("confusion", 0.0) / total_gt_sec) * 100.0
+            der_pct = comp.get("diarization error rate", 0.0) * 100.0
+        else:
+            missed_speech_pct = 0.0
+            false_alarm_pct = 0.0
+            speaker_confusion_pct = 0.0
+            der_pct = 0.0
+
+        actual_engine = engine_name
+        if engine_name == "chain":
+            actual_engine = diarizer.primary.__class__.__name__
 
         record_res = {
             "file_name": wav_path.name,
             "duration_sec": round(audio_duration, 2),
             "gt_num_speakers": gt_num_speakers,
-            "eval_num_speakers": target_num_speakers,
-            "der_percent": round(der_score * 100.0, 2),
+            "detected_num_speakers": len(detected_speakers),
+            "actual_engine": actual_engine,
+            "der_percent": round(der_pct, 2),
+            "missed_speech_percent": round(missed_speech_pct, 2),
+            "false_alarm_percent": round(false_alarm_pct, 2),
+            "speaker_confusion_percent": round(speaker_confusion_pct, 2),
             "execution_time_sec": round(elapsed, 3),
             "rtf": round(rtf, 3),
             "rss_memory_mb": round(end_rss, 1),
@@ -175,23 +229,32 @@ def run_evaluation(data_dir: Path, engine_name: str, unknown_speakers: bool, col
         results.append(record_res)
 
         print(
-            f" -> {file_stem:25s} | DER: {record_res['der_percent']:6.2f}% | "
-            f"Süre: {elapsed:6.3f}s | RTF: {rtf:5.2f}x | RSS: {end_rss:6.1f}MB"
+            f" -> {file_stem:25s} | DER: {der_pct:6.2f}% (Miss: {missed_speech_pct:5.2f}%, FA: {false_alarm_pct:5.2f}%, Conf: {speaker_confusion_pct:5.2f}%) | "
+            f"Süre: {elapsed:6.3f}s | RTF: {rtf:5.2f}x | Spk: {len(detected_speakers)}/{gt_num_speakers}"
         )
 
     if not results:
-        logger.error("Hiçbir dosya değerlendirilemedi.")
+        logger.error("[ERROR] Hiçbir dosya değerlendirilemedi.")
         sys.exit(1)
 
-    # Özet İstatistikler
+    # Özet İstatistikler ve Standart Sapma
     der_values = [r["der_percent"] for r in results]
+    miss_values = [r["missed_speech_percent"] for r in results]
+    fa_values = [r["false_alarm_percent"] for r in results]
+    conf_values = [r["speaker_confusion_percent"] for r in results]
     times = [r["execution_time_sec"] for r in results]
     rss_values = [r["rss_memory_mb"] for r in results]
 
     avg_der = float(np.mean(der_values))
+    std_der = float(np.std(der_values))
+    avg_miss = float(np.mean(miss_values))
+    avg_fa = float(np.mean(fa_values))
+    avg_conf = float(np.mean(conf_values))
+
     median_time = float(np.median(times))
     p95_time = float(np.percentile(times, 95))
     max_rss = float(np.max(rss_values))
+    fallback_rate_pct = round((fallback_count / len(results)) * 100.0, 1)
 
     timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = Path("docs/benchmarks")
@@ -201,15 +264,21 @@ def run_evaluation(data_dir: Path, engine_name: str, unknown_speakers: bool, col
     benchmark_data = {
         "engine": engine_name,
         "timestamp": timestamp_str,
+        "random_seed": seed,
         "num_files": len(results),
         "unknown_speakers": unknown_speakers,
         "collar_sec": collar,
+        "load_time_sec": load_time_sec,
         "summary": {
             "avg_der_percent": round(avg_der, 2),
+            "std_der_percent": round(std_der, 2),
+            "avg_missed_speech_percent": round(avg_miss, 2),
+            "avg_false_alarm_percent": round(avg_fa, 2),
+            "avg_speaker_confusion_percent": round(avg_conf, 2),
             "median_time_sec": round(median_time, 3),
             "p95_time_sec": round(p95_time, 3),
             "max_rss_mb": round(max_rss, 1),
-            "fallback_rate_percent": round(total_fallbacks / len(results) * 100.0, 1),
+            "fallback_rate_percent": fallback_rate_pct,
         },
         "details": results,
     }
@@ -217,16 +286,21 @@ def run_evaluation(data_dir: Path, engine_name: str, unknown_speakers: bool, col
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(benchmark_data, f, indent=2, ensure_ascii=False)
 
-    print("\n" + "=" * 80)
+    print("\n" + "=" * 90)
     print(f"BENCHMARK SUMMARY RESULTS [{engine_name.upper()}]")
-    print("=" * 80)
-    print(f" Toplam Test Dosyası : {len(results)}")
-    print(f" Ortalama DER       : %{avg_der:.2f}")
-    print(f" Medyan Süre (P50)  : {median_time:.3f} saniye")
-    print(f" P95 Süre (P95)     : {p95_time:.3f} saniye")
-    print(f" Maksimum RSS Bellek: {max_rss:.1f} MB")
-    print(f" Rapor Kayıt Yeri   : {json_path.absolute()}")
-    print("=" * 80 + "\n")
+    print("=" * 90)
+    print(f" Toplam Test Dosyası  : {len(results)}")
+    print(f" Model Yükleme Süresi : {load_time_sec:.3f} saniye")
+    print(f" Ortalama DER ± Std   : %{avg_der:.2f} ± %{std_der:.2f}")
+    print(f"  - Missed Speech (Kaçırılan)   : %{avg_miss:.2f}")
+    print(f"  - False Alarm (Yanlış Alarm) : %{avg_fa:.2f}")
+    print(f"  - Speaker Confusion (Karışma): %{avg_conf:.2f}")
+    print(f" Medyan İşlem Süresi (P50)      : {median_time:.3f} saniye")
+    print(f" P95 İşlem Süresi (P95)         : {p95_time:.3f} saniye")
+    print(f" Maksimum RSS Bellek Kullanımı  : {max_rss:.1f} MB")
+    print(f" Fallback Oranı                 : %{fallback_rate_pct:.1f}")
+    print(f" JSON Rapor Dosyası             : {json_path.absolute()}")
+    print("=" * 90 + "\n")
 
 
 if __name__ == "__main__":
@@ -234,15 +308,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data-dir",
         type=str,
-        default="tests/fixtures/diarization_eval",
-        help="Ses ve RTTM dosyalarının bulunduğu klasör",
+        default="tests/fixtures/diarization_eval/large",
+        help="Ses ve RTTM dosyalarının bulunduğu klasör (Varsayılan: tests/fixtures/diarization_eval/large)",
     )
     parser.add_argument(
         "--engine",
         type=str,
         default="ecapa",
-        choices=["pyannote", "ecapa", "cluster", "sherpa_onnx"],
-        help="Değerlendirilecek diarization motoru (pyannote, ecapa, cluster, sherpa_onnx)",
+        choices=["pyannote", "ecapa", "cluster", "sherpa_onnx", "chain"],
+        help="Değerlendirilecek motor (pyannote, ecapa, cluster, sherpa_onnx, chain)",
     )
     parser.add_argument(
         "--unknown-speakers",
@@ -255,6 +329,12 @@ if __name__ == "__main__":
         default=0.25,
         help="DER tolerans penceresi (saniye cinsinden, varsayılan: 0.25)",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Rastgelelik seed değeri (Varsayılan: 42)",
+    )
     args = parser.parse_args()
 
     run_evaluation(
@@ -262,4 +342,5 @@ if __name__ == "__main__":
         engine_name=args.engine,
         unknown_speakers=args.unknown_speakers,
         collar=args.collar,
+        seed=args.seed,
     )
