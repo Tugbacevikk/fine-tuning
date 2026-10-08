@@ -36,26 +36,31 @@ class PyannoteAudioAdapter(IDiarizer):
             self._initialized = True
             try:
                 from pathlib import Path
-                model_dir_env = os.getenv("MODEL_DIR")
-                if model_dir_env:
-                    pyannote_local = Path(model_dir_env) / "diarization" / "pyannote"
-                else:
-                    project_root = Path(__file__).resolve().parent.parent.parent.parent.parent
-                    pyannote_local = project_root / "storage" / "models" / "diarization" / "pyannote"
+                import torch
+                from pyannote.audio import Pipeline
+                from audio_analyzer.config import get_settings
 
-                source = str(pyannote_local) if (pyannote_local / "config.yaml").exists() else "pyannote/speaker-diarization-3.1"
+                settings = get_settings()
+                model_dir = Path(settings.model_dir)
+                pyannote_local = model_dir / "diarization" / "pyannote"
+                config_file = pyannote_local / "config.yaml"
+
+                if config_file.exists():
+                    source = str(config_file)
+                else:
+                    source = "pyannote/speaker-diarization-3.1"
+
                 token = self.use_auth_token
                 logger.info("Pyannote.audio 3.1 hattı yükleniyor (Kaynak: %s)...", source)
 
                 kwargs = {}
-                if token and not (pyannote_local / "config.yaml").exists():
+                if token and not config_file.exists():
                     kwargs["use_auth_token"] = token
 
                 self._pipeline = Pipeline.from_pretrained(source, **kwargs)
                 if self._pipeline is not None:
-                    from audio_analyzer.config import get_settings
-                    step = get_settings().diarization_step_sec
-                    if hasattr(self._pipeline, "segmentation"):
+                    step = settings.diarization_step_sec
+                    if hasattr(self._pipeline, "segmentation") and hasattr(self._pipeline.segmentation, "step"):
                         self._pipeline.segmentation.step = max(0.4, step)
                     if self.device_config.device == "cuda":
                         self._pipeline.to(torch.device("cuda"))

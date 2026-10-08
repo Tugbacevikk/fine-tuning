@@ -98,3 +98,24 @@ def test_failing_diarizer_called_exactly_once():
     assert failing_primary.call_count == 1
     assert len(res) == 2
     assert res[0].speaker_id == "SPEAKER_00"
+
+
+def test_type_error_diarizer_called_exactly_once_with_num_speakers():
+    """Doğrular: Motor içinde TypeError fırlatılsa bile (num_speakers=2 ile) motor 1 kez çağrılır, 2. kez parametresiz retried edilmez."""
+    class TypeErrorDiarizer(IDiarizer):
+        def __init__(self):
+            self.call_count = 0
+
+        def diarize(self, audio_path: str, num_speakers: int | None = None):
+            self.call_count += 1
+            raise TypeError("Internal engine TypeError (e.g. invalid array operation)")
+
+    type_error_primary = TypeErrorDiarizer()
+    successful_fallback = MockSuccessfulDiarizer()
+    diarizer = FallbackDiarizer(primary_diarizer=type_error_primary, fallback_diarizers=[successful_fallback])
+
+    res = diarizer.diarize("test.wav", num_speakers=2)
+    assert type_error_primary.call_count == 1
+    assert len(res) == 2
+    assert res[0].speaker_id == "SPEAKER_00"
+

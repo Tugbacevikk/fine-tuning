@@ -29,13 +29,7 @@ class FallbackDiarizer(IDiarizer):
                 logger.info(
                     "Diarization motoru deneniyor: %s (Adım %d/%d)", engine_name, i + 1, len(chain)
                 )
-                if num_speakers is not None:
-                    try:
-                        segments = engine.diarize(audio_path, num_speakers=num_speakers)
-                    except TypeError:
-                        segments = engine.diarize(audio_path)
-                else:
-                    segments = engine.diarize(audio_path)
+                segments = engine.diarize(audio_path, num_speakers=num_speakers)
                 if segments and len(segments) > 0:
                     return segments
 

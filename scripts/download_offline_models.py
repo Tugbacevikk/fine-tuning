@@ -65,15 +65,57 @@ def download_pyannote_model():
 
     try:
         import os
-        from pyannote.audio import Pipeline
+        import yaml
+        from huggingface_hub import snapshot_download
 
         token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
-        if token:
-            pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=token)
-            pipeline.save_pretrained(str(pyannote_dir))
-            print("[OK] Pyannote 3.1 Modeli yerel klasöre kaydedildi!")
-        else:
+        if not token:
             print("[WARNING] Pyannote indirmesi için HF_TOKEN ortam değişkeni gereklidir.")
+            return
+
+        print("[Pyannote] Pipeline reposu indiriliyor (pyannote/speaker-diarization-3.1)...")
+        snapshot_download(
+            repo_id="pyannote/speaker-diarization-3.1",
+            local_dir=str(pyannote_dir),
+            token=token,
+        )
+
+        seg_dir = pyannote_dir / "segmentation"
+        seg_dir.mkdir(parents=True, exist_ok=True)
+        print("[Pyannote] Segmentation modeli indiriliyor (pyannote/segmentation-3.0)...")
+        snapshot_download(
+            repo_id="pyannote/segmentation-3.0",
+            local_dir=str(seg_dir),
+            token=token,
+        )
+
+        emb_dir = pyannote_dir / "embedding"
+        emb_dir.mkdir(parents=True, exist_ok=True)
+        print("[Pyannote] Embedding modeli indiriliyor (speechbrain/spkrec-ecapa-voxceleb)...")
+        snapshot_download(
+            repo_id="speechbrain/spkrec-ecapa-voxceleb",
+            local_dir=str(emb_dir),
+            token=token,
+        )
+
+        config_path = pyannote_dir / "config.yaml"
+        if config_path.exists():
+            with open(config_path, "r", encoding="utf-8") as f:
+                config_data = yaml.safe_load(f)
+
+            if "pipeline" in config_data and "params" in config_data["pipeline"]:
+                params = config_data["pipeline"]["params"]
+                seg_bin = seg_dir / "pytorch_model.bin"
+                if not seg_bin.exists():
+                    seg_bin = seg_dir / "model.safetensors"
+                params["segmentation"] = str(seg_bin) if seg_bin.exists() else str(seg_dir)
+                params["embedding"] = str(emb_dir)
+
+            with open(config_path, "w", encoding="utf-8") as f:
+                yaml.dump(config_data, f, default_flow_style=False)
+
+            print("[OK] Pyannote 3.1 config.yaml yerel model yollarıyla güncellendi!")
+        print("[OK] Pyannote 3.1 yerel çevrimdışı modeller başarıyla yüklendi!")
     except Exception as e:
         print(f"[WARNING] Pyannote indirme uyarısı: {e}")
 
