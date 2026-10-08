@@ -59,12 +59,9 @@ class SpeechBrainECAPADiarizer(IDiarizer):
 
             from speechbrain.inference.speaker import EncoderClassifier
 
-            model_dir_env = os.getenv("MODEL_DIR")
-            if model_dir_env:
-                spk_dir = Path(model_dir_env) / "diarization" / "speechbrain_ecapa"
-            else:
-                project_root = Path(__file__).resolve().parent.parent.parent.parent.parent
-                spk_dir = project_root / "storage" / "models" / "diarization" / "speechbrain_ecapa"
+            from audio_analyzer.config import get_settings
+            settings = get_settings()
+            spk_dir = Path(settings.model_dir) / "diarization" / "speechbrain_ecapa"
 
             spk_dir.mkdir(parents=True, exist_ok=True)
 

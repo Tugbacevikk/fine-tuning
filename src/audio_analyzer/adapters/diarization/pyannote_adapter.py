@@ -43,9 +43,11 @@ class PyannoteAudioAdapter(IDiarizer):
                 settings = get_settings()
                 model_dir = Path(settings.model_dir)
                 pyannote_local = model_dir / "diarization" / "pyannote"
-                config_file = pyannote_local / "config.yaml"
+                config_local = pyannote_local / "config.local.yaml"
+                config_default = pyannote_local / "config.yaml"
+                config_file = config_local if config_local.exists() else (config_default if config_default.exists() else None)
 
-                if config_file.exists():
+                if config_file:
                     source = str(config_file)
                 else:
                     source = "pyannote/speaker-diarization-3.1"

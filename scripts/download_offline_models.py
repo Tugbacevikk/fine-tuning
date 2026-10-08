@@ -4,7 +4,11 @@ from pathlib import Path
 # Proje kök dizinini ekle
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-MODEL_DIR = Path(__file__).parent.parent / "storage" / "models"
+try:
+    from audio_analyzer.config import get_settings
+    MODEL_DIR = Path(get_settings().model_dir)
+except Exception:
+    MODEL_DIR = Path(__file__).parent.parent / "storage" / "models"
 
 
 def download_stt_model(model_size: str = "small"):
@@ -16,11 +20,11 @@ def download_stt_model(model_size: str = "small"):
     try:
         from faster_whisper import WhisperModel
 
-        # Modeli bir kez yerel klasöre indir
         model = WhisperModel(model_size, download_root=str(stt_dir), device="cpu", compute_type="int8")
         print(f"[OK] STT Modeli ({model_size}) yerel klasöre indirildi!")
     except Exception as e:
         print(f"[ERROR] STT Model indirme hatası: {e}")
+        sys.exit(1)
 
 
 def download_vad_model():
@@ -35,7 +39,8 @@ def download_vad_model():
         model = load_silero_vad()
         print("[OK] Silero VAD Modeli yerel klasöre kaydedildi!")
     except Exception as e:
-        print(f"[WARNING] Silero VAD indirme uyarısı: {e}")
+        print(f"[ERROR] Silero VAD indirme hatası: {e}")
+        sys.exit(1)
 
 
 def download_diarization_model():
@@ -54,7 +59,8 @@ def download_diarization_model():
         )
         print("[OK] SpeechBrain ECAPA-TDNN Modeli yerel klasöre kaydedildi!")
     except Exception as e:
-        print(f"[WARNING] Standard SpeechBrain indirme uyarısı: {e}")
+        print(f"[ERROR] Standard SpeechBrain indirme hatası: {e}")
+        sys.exit(1)
 
 
 def download_pyannote_model():
@@ -70,7 +76,7 @@ def download_pyannote_model():
 
         token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
         if not token:
-            print("[WARNING] Pyannote indirmesi için HF_TOKEN ortam değişkeni gereklidir.")
+            print("[WARNING] Pyannote indirmesi için HF_TOKEN ortam değişkeni gereklidir. Pyannote indirmesi atlanıyor.")
             return
 
         print("[Pyannote] Pipeline reposu indiriliyor (pyannote/speaker-diarization-3.1)...")
@@ -91,14 +97,15 @@ def download_pyannote_model():
 
         emb_dir = pyannote_dir / "embedding"
         emb_dir.mkdir(parents=True, exist_ok=True)
-        print("[Pyannote] Embedding modeli indiriliyor (speechbrain/spkrec-ecapa-voxceleb)...")
+        print("[Pyannote] Embedding modeli indiriliyor (pyannote/wespeaker-voxceleb-resnet34-LM)...")
         snapshot_download(
-            repo_id="speechbrain/spkrec-ecapa-voxceleb",
+            repo_id="pyannote/wespeaker-voxceleb-resnet34-LM",
             local_dir=str(emb_dir),
             token=token,
         )
 
         config_path = pyannote_dir / "config.yaml"
+        local_config_path = pyannote_dir / "config.local.yaml"
         if config_path.exists():
             with open(config_path, "r", encoding="utf-8") as f:
                 config_data = yaml.safe_load(f)
@@ -109,15 +116,20 @@ def download_pyannote_model():
                 if not seg_bin.exists():
                     seg_bin = seg_dir / "model.safetensors"
                 params["segmentation"] = str(seg_bin) if seg_bin.exists() else str(seg_dir)
-                params["embedding"] = str(emb_dir)
 
-            with open(config_path, "w", encoding="utf-8") as f:
+                emb_bin = emb_dir / "pytorch_model.bin"
+                if not emb_bin.exists():
+                    emb_bin = emb_dir / "model.safetensors"
+                params["embedding"] = str(emb_bin) if emb_bin.exists() else str(emb_dir)
+
+            with open(local_config_path, "w", encoding="utf-8") as f:
                 yaml.dump(config_data, f, default_flow_style=False)
 
-            print("[OK] Pyannote 3.1 config.yaml yerel model yollarıyla güncellendi!")
+            print("[OK] Pyannote 3.1 config.local.yaml yerel model yollarıyla oluşturuldu!")
         print("[OK] Pyannote 3.1 yerel çevrimdışı modeller başarıyla yüklendi!")
     except Exception as e:
-        print(f"[WARNING] Pyannote indirme uyarısı: {e}")
+        print(f"[ERROR] Pyannote indirme hatası: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -67,6 +67,9 @@ class Settings:
     redis_url: str = field(default_factory=lambda: os.getenv("REDIS_URL", "redis://localhost:6379/0"))
 
     # 4. Yapay Zeka Model Yapılandırması
+    model_dir: str = field(
+        default_factory=lambda: os.getenv("MODEL_DIR", "storage/models")
+    )
     whisper_model_size: str = field(default_factory=lambda: os.getenv("WHISPER_MODEL_SIZE", "small"))
     whisper_beam_size: int = field(default_factory=_get_whisper_beam_size)
     whisper_batch_size: int = field(default_factory=lambda: int(os.getenv("WHISPER_BATCH_SIZE", "8")))
