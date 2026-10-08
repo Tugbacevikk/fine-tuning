@@ -24,6 +24,8 @@ services:
       - STORAGE_TYPE=disk
       - STORAGE_DIR=/app/storage/raw
       - MODEL_DIR=/app/storage/models
+      - DIARIZATION_ENGINE=${DIARIZATION_ENGINE:-sherpa_onnx}
+      - DIARIZATION_ESCALATION=${DIARIZATION_ESCALATION:-off}
       - WHISPER_MODEL_SIZE=small
       - WORKER_CPU_THREADS=4
       - TARGET_NUM_SPEAKERS=${TARGET_NUM_SPEAKERS:-2}
@@ -56,6 +58,8 @@ services:
       - STORAGE_TYPE=disk
       - STORAGE_DIR=/app/storage/raw
       - MODEL_DIR=/app/storage/models
+      - DIARIZATION_ENGINE=${DIARIZATION_ENGINE:-sherpa_onnx}
+      - DIARIZATION_ESCALATION=${DIARIZATION_ESCALATION:-off}
       - WHISPER_MODEL_SIZE=small
       - WORKER_CPU_THREADS=4
       - TARGET_NUM_SPEAKERS=${TARGET_NUM_SPEAKERS:-2}

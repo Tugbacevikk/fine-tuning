@@ -9,9 +9,9 @@ Yüksek performanslı, modüler, **Clean Architecture / Code-First** prensipleri
 ## Özellikler
 - **Speech-to-Text (STT)**: Faster-Whisper ile zaman damgalı metne dönüştürme (`tiny`, `small`, `medium` model desteği).
 - **%100 Çevrimdışı Speaker Diarization**:
-  - **Birincil Motor**: SpeechBrain ECAPA-TDNN (%100 Çevrimdışı, Token-Free & Derin Nöral Ses Parmak İzi).
-  - **İkincil Motor**: Local Spectral Clustering (Tamamen yerel akustik kümeleme).
-  - **Planlanan Motor**: PyAnnote (Adapter'ı şu anda deneysel/planlama aşamasındadır).
+  - **Birincil Motor**: Sherpa-ONNX (%100 Çevrimdışı, Token-Free, Pyannote segmentation-3.0 ONNX + 3DSpeaker ONNX embedding, 4.8s hızlı model yükleme & 632 MB RAM footprint).
+  - **Zor Durum Kademesi**: Pyannote Community-1 (`pyannote.audio 4.x`, opsiyonel `DIARIZATION_ESCALATION=unknown_speakers` yükseltme kademesi).
+  - **Yedek Motorlar**: SpeechBrain ECAPA-TDNN -> Local Spectral Clustering.
 - **SemanticRefiner & Yerel LLM Entegrasyonu**:
   - Alan Odaklı Kurallar (`domain_mode="call_center"` ile müşteri/temsilci geçiş tespiti ve rol sabitleme).
   - Opsiyonel yerel Ollama LLM (`llama3.2` / `qwen2.5`) entegrasyonu ile konuşmacı metinlerinin anlamsal iyileştirilmesi.

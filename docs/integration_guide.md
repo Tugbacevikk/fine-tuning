@@ -15,6 +15,7 @@ python scripts/download_offline_models.py
 # 2. Çevrimdışı modda sunucuyu başlatın
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
+export DIARIZATION_ENGINE=sherpa_onnx
 export WHISPER_MODEL_SIZE=small
 
 uvicorn audio_analyzer.api.main:app --app-dir src --host 0.0.0.0 --port 8000

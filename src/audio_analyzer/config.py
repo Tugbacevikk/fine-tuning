@@ -74,7 +74,7 @@ class Settings:
     whisper_beam_size: int = field(default_factory=_get_whisper_beam_size)
     whisper_batch_size: int = field(default_factory=lambda: int(os.getenv("WHISPER_BATCH_SIZE", "8")))
     worker_cpu_threads: int = field(default_factory=lambda: int(os.getenv("WORKER_CPU_THREADS", "4")))
-    diarization_engine: str = field(default_factory=lambda: os.getenv("DIARIZATION_ENGINE", "pyannote").lower())
+    diarization_engine: str = field(default_factory=lambda: os.getenv("DIARIZATION_ENGINE", "sherpa_onnx").lower())
     diarization_escalation: str = field(default_factory=lambda: os.getenv("DIARIZATION_ESCALATION", "off").lower())
     diarization_step_sec: float = field(default_factory=lambda: float(os.getenv("DIARIZATION_STEP_SEC", "0.3")))
     diarization_threshold: float = field(default_factory=lambda: float(os.getenv("DIARIZATION_THRESHOLD", "0.55")))
