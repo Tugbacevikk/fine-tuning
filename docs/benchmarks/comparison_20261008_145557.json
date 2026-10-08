@@ -1,0 +1,11 @@
+{
+  "old_file": "diarization_ecapa_20261008_145138.json",
+  "new_file": "diarization_ecapa_20261008_145546.json",
+  "num_common_files": 40,
+  "mean_diff_percent": 0.06,
+  "median_diff_percent": 0.0,
+  "improved_count": 0,
+  "degraded_count": 2,
+  "unchanged_count": 38,
+  "wilcoxon_pvalue": 0.1797
+}

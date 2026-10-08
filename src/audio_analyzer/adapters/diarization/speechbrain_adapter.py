@@ -217,6 +217,8 @@ class SpeechBrainECAPADiarizer(IDiarizer):
                     val_idx += 1
                 raw_labels[i] = last_lbl
 
+            effective_num_spk = num_speakers if num_speakers is not None else self.num_speakers
+
             k_size = 3 if len(raw_labels) >= 3 else 1
             unique_label_count = len(np.unique(raw_labels))
 
@@ -227,13 +229,35 @@ class SpeechBrainECAPADiarizer(IDiarizer):
                     medfilt(raw_labels, kernel_size=k_size) if len(raw_labels) > 0 else raw_labels
                 )
 
-            effective_num_spk = num_speakers if num_speakers is not None else self.num_speakers
             if (
                 effective_num_spk is not None
                 and len(np.unique(final_labels)) < min(effective_num_spk, len(unit_embs))
                 and len(np.unique(raw_labels)) >= min(effective_num_spk, len(unit_embs))
             ):
-                final_labels = raw_labels
+                # Yaklaşım A (Seçilen Yöntem): Medfilt sonrası kaybolan kümelerin en uzun ardışık pencere grubunu koru
+                raw_clusters = set(np.unique(raw_labels))
+                final_clusters = set(np.unique(final_labels))
+                missing_clusters = raw_clusters - final_clusters
+
+                for c in missing_clusters:
+                    runs = []
+                    in_run = False
+                    start_r = 0
+                    for r_i, lbl in enumerate(raw_labels):
+                        if lbl == c:
+                            if not in_run:
+                                in_run = True
+                                start_r = r_i
+                        else:
+                            if in_run:
+                                in_run = False
+                                runs.append((start_r, r_i))
+                    if in_run:
+                        runs.append((start_r, len(raw_labels)))
+
+                    if runs:
+                        best_run = max(runs, key=lambda r: r[1] - r[0])
+                        final_labels[best_run[0]:best_run[1]] = c
 
             segments: list[DiarizationSegment] = []
             current_spk = f"SPEAKER_{final_labels[0]:02d}"

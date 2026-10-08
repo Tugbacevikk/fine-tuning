@@ -52,7 +52,15 @@ def _build_pipeline() -> AudioAnalysisPipeline:
         device_config=device_config, num_speakers=settings.target_num_speakers
     )
 
-    if diar_engine_name == "pyannote":
+    if diar_engine_name in ("sherpa_onnx", "sherpa"):
+        from audio_analyzer.adapters.diarization.sherpa_onnx_adapter import (
+            SherpaOnnxAudioAdapter,
+        )
+
+        primary_diarizer = SherpaOnnxAudioAdapter(
+            device_config=device_config, num_speakers=settings.target_num_speakers
+        )
+    elif diar_engine_name == "pyannote":
         from audio_analyzer.adapters.diarization.pyannote_adapter import (
             PyannoteAudioAdapter,
         )

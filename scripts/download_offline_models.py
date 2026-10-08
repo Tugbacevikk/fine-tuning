@@ -137,10 +137,41 @@ def download_pyannote_model():
         sys.exit(1)
 
 
+def download_sherpa_onnx_model():
+    """Sherpa-ONNX (pyannote segmentation-3.0 ONNX ve WeSpeaker/3DSpeaker ONNX embedding) modellerini yerel klasöre indirir."""
+    sherpa_dir = MODEL_DIR / "diarization" / "sherpa_onnx"
+    sherpa_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[MODEL] Sherpa-ONNX Modelleri indiriliyor/kontrol ediliyor -> {sherpa_dir}")
+
+    try:
+        from huggingface_hub import hf_hub_download
+
+        print("[Sherpa-ONNX] Segmentation modeli indiriliyor (csukuangfj/sherpa-onnx-pyannote-segmentation-3-0)...")
+        hf_hub_download(
+            repo_id="csukuangfj/sherpa-onnx-pyannote-segmentation-3-0",
+            filename="model.onnx",
+            local_dir=str(sherpa_dir),
+        )
+
+        print("[Sherpa-ONNX] Embedding modeli indiriliyor (csukuangfj/speaker-embedding-models)...")
+        hf_hub_download(
+            repo_id="csukuangfj/speaker-embedding-models",
+            filename="3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
+            local_dir=str(sherpa_dir),
+        )
+
+        print("[OK] Sherpa-ONNX çevrimdışı ONNX modelleri başarıyla yüklendi!")
+    except Exception as e:
+        print(f"[ERROR] Sherpa-ONNX indirme hatası: {e}")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     print("[START] Çevrimdışı Yapay Zeka Model İndirme Başlatılıyor...")
     download_stt_model("small")
     download_vad_model()
     download_diarization_model()
     download_pyannote_model()
+    download_sherpa_onnx_model()
     print("[DONE] Çevrimdışı model paketleme tamamlandı!")
+
