@@ -63,77 +63,30 @@ def download_diarization_model():
         sys.exit(1)
 
 
-def download_pyannote_model():
-    """Pyannote 3.1 konuşmacı ayrıştırma modelini yerel depolama klasörüne indirir."""
-    pyannote_dir = MODEL_DIR / "diarization" / "pyannote"
+def download_pyannote_community1_model():
+    """Pyannote 4.x Community-1 konuşmacı ayrıştırma modelini yerel depolama klasörüne indirir."""
+    pyannote_dir = MODEL_DIR / "diarization" / "pyannote-community-1"
     pyannote_dir.mkdir(parents=True, exist_ok=True)
-    print(f"[MODEL] Pyannote 3.1 Modeli indiriliyor/kontrol ediliyor -> {pyannote_dir}")
+    print(f"[MODEL] Pyannote Community-1 Modeli indiriliyor/kontrol ediliyor -> {pyannote_dir}")
 
     try:
         import os
-        import yaml
         from huggingface_hub import snapshot_download
 
         token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
         if not token:
-            engine = os.getenv("DIARIZATION_ENGINE", "pyannote").lower()
-            if engine == "pyannote":
-                print("[ERROR] DIARIZATION_ENGINE=pyannote olarak seçilmiş ancak HF_TOKEN ortam değişkeni eksik. Pyannote model indirme başarısız.")
-                sys.exit(1)
-            else:
-                print("[WARNING] Pyannote indirmesi için HF_TOKEN ortam değişkeni gereklidir. Pyannote indirmesi atlanıyor.")
-                return
+            print("[WARNING] Pyannote Community-1 indirmesi için HF_TOKEN ortam değişkeni gereklidir. Pyannote indirmesi atlanıyor.")
+            return
 
-        print("[Pyannote] Pipeline reposu indiriliyor (pyannote/speaker-diarization-3.1)...")
+        print("[Pyannote] Community-1 Pipeline reposu indiriliyor (pyannote/speaker-diarization-3.1)...")
         snapshot_download(
             repo_id="pyannote/speaker-diarization-3.1",
             local_dir=str(pyannote_dir),
             token=token,
         )
-
-        seg_dir = pyannote_dir / "segmentation"
-        seg_dir.mkdir(parents=True, exist_ok=True)
-        print("[Pyannote] Segmentation modeli indiriliyor (pyannote/segmentation-3.0)...")
-        snapshot_download(
-            repo_id="pyannote/segmentation-3.0",
-            local_dir=str(seg_dir),
-            token=token,
-        )
-
-        emb_dir = pyannote_dir / "embedding"
-        emb_dir.mkdir(parents=True, exist_ok=True)
-        print("[Pyannote] Embedding modeli indiriliyor (pyannote/wespeaker-voxceleb-resnet34-LM)...")
-        snapshot_download(
-            repo_id="pyannote/wespeaker-voxceleb-resnet34-LM",
-            local_dir=str(emb_dir),
-            token=token,
-        )
-
-        config_path = pyannote_dir / "config.yaml"
-        local_config_path = pyannote_dir / "config.local.yaml"
-        if config_path.exists():
-            with open(config_path, "r", encoding="utf-8") as f:
-                config_data = yaml.safe_load(f)
-
-            if "pipeline" in config_data and "params" in config_data["pipeline"]:
-                params = config_data["pipeline"]["params"]
-                seg_bin = seg_dir / "pytorch_model.bin"
-                if not seg_bin.exists():
-                    seg_bin = seg_dir / "model.safetensors"
-                params["segmentation"] = str(seg_bin) if seg_bin.exists() else str(seg_dir)
-
-                emb_bin = emb_dir / "pytorch_model.bin"
-                if not emb_bin.exists():
-                    emb_bin = emb_dir / "model.safetensors"
-                params["embedding"] = str(emb_bin) if emb_bin.exists() else str(emb_dir)
-
-            with open(local_config_path, "w", encoding="utf-8") as f:
-                yaml.dump(config_data, f, default_flow_style=False)
-
-            print("[OK] Pyannote 3.1 config.local.yaml yerel model yollarıyla oluşturuldu!")
-        print("[OK] Pyannote 3.1 yerel çevrimdışı modeller başarıyla yüklendi!")
+        print("[OK] Pyannote Community-1 yerel çevrimdışı modeller başarıyla yüklendi!")
     except Exception as e:
-        print(f"[ERROR] Pyannote indirme hatası: {e}")
+        print(f"[ERROR] Pyannote Community-1 indirme hatası: {e}")
         sys.exit(1)
 
 
@@ -171,7 +124,7 @@ if __name__ == "__main__":
     download_stt_model("small")
     download_vad_model()
     download_diarization_model()
-    download_pyannote_model()
+    download_pyannote_community1_model()
     download_sherpa_onnx_model()
     print("[DONE] Çevrimdışı model paketleme tamamlandı!")
 

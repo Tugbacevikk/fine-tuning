@@ -43,7 +43,7 @@ sherpa = [
     "sherpa-onnx>=1.10.0",
 ]
 pyannote = [
-    "pyannote.audio>=3.1.0,<4.0.0",
+    "pyannote.audio>=4.0.0,<5.0.0",
 ]
 denoise = [
     "deepfilternet>=0.5.0",

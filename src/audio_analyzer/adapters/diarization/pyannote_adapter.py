@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 
 from audio_analyzer.domain.interfaces import IDiarizer
 from audio_analyzer.domain.models import DeviceConfig, DiarizationSegment
@@ -9,21 +10,19 @@ logger = logging.getLogger(__name__)
 
 class PyannoteAudioAdapter(IDiarizer):
     """
-    Pyannote.audio 3.1 State-of-the-Art (SOTA) Konuşmacı Ayrıştırma Motoru Adaptörü.
-    SpeechBrain motoruna göre %95+ doğruluk seviyesi sunar.
-    HF_TOKEN tanımlıysa 'pyannote/speaker-diarization-3.1' modelini yükler.
-    Token bulunamazsa veya yükleme başarısız olursa otomatik SpeechBrain motoruna düşer (Fallback).
+    Pyannote.audio 4.x Community-1 Zor Durum Kademe Konuşmacı Ayrıştırma Motoru Adaptörü.
+    Zorlu konuşmacı ayrıştırma senaryoları için ikincil yüksek duyarlılıklı kademe olarak görev yapar.
     """
 
     def __init__(
         self,
         device_config: DeviceConfig | None = None,
-        use_auth_token: str | None = None,
+        token: str | None = None,
         num_speakers: int | None = None,
     ):
         self.device_config = device_config or DeviceConfig()
-        self.use_auth_token = (
-            use_auth_token
+        self.token = (
+            token
             or os.getenv("HF_TOKEN")
             or os.getenv("HUGGINGFACE_TOKEN")
         )
@@ -35,29 +34,27 @@ class PyannoteAudioAdapter(IDiarizer):
         if not self._initialized:
             self._initialized = True
             try:
-                from pathlib import Path
                 import torch
                 from pyannote.audio import Pipeline
                 from audio_analyzer.config import get_settings
 
                 settings = get_settings()
                 model_dir = Path(settings.model_dir)
-                pyannote_local = model_dir / "diarization" / "pyannote"
-                config_local = pyannote_local / "config.local.yaml"
-                config_default = pyannote_local / "config.yaml"
-                config_file = config_local if config_local.exists() else (config_default if config_default.exists() else None)
+                community_dir = model_dir / "diarization" / "pyannote-community-1"
 
-                if config_file:
-                    source = str(config_file)
+                if (community_dir / "config.yaml").exists():
+                    source = str(community_dir / "config.yaml")
+                elif community_dir.exists():
+                    source = str(community_dir)
                 else:
                     source = "pyannote/speaker-diarization-3.1"
 
-                token = self.use_auth_token
-                logger.info("Pyannote.audio 3.1 hattı yükleniyor (Kaynak: %s)...", source)
+                tok = self.token
+                logger.info("Pyannote.audio 4.x Community-1 hattı yükleniyor (Kaynak: %s)...", source)
 
                 kwargs = {}
-                if token and config_file is None:
-                    kwargs["use_auth_token"] = token
+                if tok and not Path(source).exists():
+                    kwargs["token"] = tok
 
                 self._pipeline = Pipeline.from_pretrained(source, **kwargs)
                 if self._pipeline is not None:
@@ -66,10 +63,10 @@ class PyannoteAudioAdapter(IDiarizer):
                         self._pipeline.segmentation.step = max(0.4, step)
                     if self.device_config.device == "cuda":
                         self._pipeline.to(torch.device("cuda"))
-                logger.info("Pyannote.audio 3.1 konuşmacı motoru başarıyla aktifleştirildi.")
+                logger.info("Pyannote.audio 4.x Community-1 motoru başarıyla aktifleştirildi.")
             except Exception as ex:
                 logger.warning(
-                    "Pyannote.audio 3.1 başlatılamadı (%s). SpeechBrain motoruna düşülecek.", ex
+                    "Pyannote.audio 4.x Community-1 motoru yüklenemedi (%s).", ex
                 )
                 self._pipeline = None
 
@@ -77,7 +74,7 @@ class PyannoteAudioAdapter(IDiarizer):
         self._lazy_load_pipeline()
 
         if self._pipeline is None:
-            logger.error("Pyannote.audio 3.1 motoru yüklenemedi. Konuşmacı ayrıştırma atlanıyor.")
+            logger.error("Pyannote.audio 4.x motoru yüklenemedi. Konuşmacı ayrıştırma atlanıyor.")
             return []
 
         try:
@@ -104,7 +101,12 @@ class PyannoteAudioAdapter(IDiarizer):
                 kwargs["num_speakers"] = target_num_speakers
 
             diarization_out = self._pipeline(audio_payload, **kwargs)
-            annotation = getattr(diarization_out, "speaker_diarization", diarization_out)
+            
+            # Pyannote 4.x exclusive annotation kontrolü
+            annotation = getattr(diarization_out, "exclusive", None)
+            if annotation is None:
+                annotation = getattr(diarization_out, "speaker_diarization", diarization_out)
+
             segments: list[DiarizationSegment] = []
 
             if hasattr(annotation, "itertracks"):
@@ -119,5 +121,5 @@ class PyannoteAudioAdapter(IDiarizer):
 
             return segments
         except Exception as err:
-            logger.error("Pyannote diarize hatası (%s).", err)
+            logger.error("Pyannote Community-1 diarize hatası (%s).", err)
             return []

@@ -60,6 +60,12 @@ DIARIZATION_FALLBACK_COUNTER = Counter(
     labelnames=["from_engine", "to_engine", "reason"],
 )
 
+DIARIZATION_ESCALATION_COUNTER = Counter(
+    "audio_diarization_escalations_total",
+    "Diarization motoru yükseltme (escalation) tetiklenme sayısı",
+    labelnames=["reason", "target_engine"],
+)
+
 
 
 async def update_dynamic_gauges():

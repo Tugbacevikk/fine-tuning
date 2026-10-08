@@ -43,12 +43,19 @@ def _build_pipeline() -> AudioAnalysisPipeline:
             f"STT Motoru (FasterWhisper) başlatılamadı: {e}. Lütfen model bağımlılıklarını kontrol edin."
         )
 
-    # 2. Diarization Engine (Pyannote 3.1 SOTA / SpeechBrain ECAPA Fallback)
+    # 2. Diarization Engine Mimarisi (SherpaOnnx -> Community1 -> SpeechBrain ECAPA)
+    from audio_analyzer.adapters.diarization.escalating_diarizer import EscalatingDiarizer
     from audio_analyzer.adapters.diarization.fallback_diarizer import FallbackDiarizer
+    from audio_analyzer.adapters.diarization.pyannote_adapter import PyannoteAudioAdapter
     from audio_analyzer.adapters.diarization.speechbrain_adapter import SpeechBrainECAPADiarizer
 
     diar_engine_name = settings.diarization_engine
-    fallback_diarizer = SpeechBrainECAPADiarizer(
+    escalation_mode = settings.diarization_escalation
+
+    ecapa_diarizer = SpeechBrainECAPADiarizer(
+        device_config=device_config, num_speakers=settings.target_num_speakers
+    )
+    community1_diarizer = PyannoteAudioAdapter(
         device_config=device_config, num_speakers=settings.target_num_speakers
     )
 
@@ -60,20 +67,22 @@ def _build_pipeline() -> AudioAnalysisPipeline:
         primary_diarizer = SherpaOnnxAudioAdapter(
             device_config=device_config, num_speakers=settings.target_num_speakers
         )
-    elif diar_engine_name == "pyannote":
-        from audio_analyzer.adapters.diarization.pyannote_adapter import (
-            PyannoteAudioAdapter,
-        )
+    elif diar_engine_name in ("community1", "pyannote"):
+        primary_diarizer = community1_diarizer
+    else:
+        primary_diarizer = ecapa_diarizer
 
-        primary_diarizer = PyannoteAudioAdapter(
-            device_config=device_config, num_speakers=settings.target_num_speakers
+    fallbacks = [ecapa_diarizer] if ecapa_diarizer != primary_diarizer else []
+    fallback_chain = FallbackDiarizer(primary_diarizer=primary_diarizer, fallback_diarizers=fallbacks)
+
+    if escalation_mode != "off" and primary_diarizer != community1_diarizer:
+        diarizer = EscalatingDiarizer(
+            primary_diarizer=fallback_chain,
+            escalation_diarizer=community1_diarizer,
+            escalation_mode=escalation_mode,
         )
     else:
-        primary_diarizer = fallback_diarizer
-        fallback_diarizer = None
-
-    fallbacks = [fallback_diarizer] if fallback_diarizer and fallback_diarizer != primary_diarizer else []
-    diarizer = FallbackDiarizer(primary_diarizer=primary_diarizer, fallback_diarizers=fallbacks)
+        diarizer = fallback_chain
 
     from audio_analyzer.adapters.audio.denoiser import DeepFilterDenoiser
     from audio_analyzer.adapters.audio.rust_dsp_adapter import RustAudioDSPProcessor

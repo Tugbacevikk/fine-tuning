@@ -52,14 +52,14 @@ def parse_rttm(rttm_path: Path, uri: str) -> tuple[Annotation, int]:
 
 def load_single_engine(engine_name: str, device_config: DeviceConfig):
     """Belirtilen motor adaptörünü doğrudan yükler (Fallback zinciri olmadan)."""
-    if engine_name == "pyannote":
+    if engine_name in ("pyannote", "community1"):
         from audio_analyzer.adapters.diarization.pyannote_adapter import PyannoteAudioAdapter
 
         adapter = PyannoteAudioAdapter(device_config=device_config)
         adapter._lazy_load_pipeline()
         if adapter._pipeline is None:
             raise RuntimeError(
-                "Pyannote 3.1 yerel modelleri/konfigürasyonu yüklenemedi. Lütfen modellerin varlığını kontrol edin."
+                "Pyannote Community-1 yerel modelleri/konfigürasyonu yüklenemedi."
             )
         return adapter
     elif engine_name == "ecapa":
@@ -425,8 +425,8 @@ if __name__ == "__main__":
         "--engine",
         type=str,
         default="ecapa",
-        choices=["pyannote", "ecapa", "cluster", "sherpa_onnx", "chain"],
-        help="Değerlendirilecek motor (pyannote, ecapa, cluster, sherpa_onnx, chain)",
+        choices=["pyannote", "community1", "ecapa", "cluster", "sherpa_onnx", "chain"],
+        help="Değerlendirilecek motor (pyannote, community1, ecapa, cluster, sherpa_onnx, chain)",
     )
     parser.add_argument(
         "--compare",
