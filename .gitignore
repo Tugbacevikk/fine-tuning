@@ -31,6 +31,9 @@ storage/models/*
 *.m4a
 *.flac
 *.ogg
+!tests/fixtures/diarization_eval/*.wav
+!tests/fixtures/diarization_eval/*.rttm
+tests/fixtures/diarization_eval/large/
 scratch/
 
 # Python & Caches

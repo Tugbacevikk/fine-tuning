@@ -1,0 +1,49 @@
+{
+  "engine": "pyannote",
+  "timestamp": "20261008_134943",
+  "num_files": 3,
+  "unknown_speakers": false,
+  "collar_sec": 0.25,
+  "summary": {
+    "avg_der_percent": 34.77,
+    "median_time_sec": 2.193,
+    "p95_time_sec": 2.561,
+    "max_rss_mb": 1023.0,
+    "fallback_rate_percent": 0.0
+  },
+  "details": [
+    {
+      "file_name": "sample1_2spk.wav",
+      "duration_sec": 6.0,
+      "gt_num_speakers": 2,
+      "eval_num_speakers": 2,
+      "der_percent": 37.73,
+      "execution_time_sec": 1.848,
+      "rtf": 0.308,
+      "rss_memory_mb": 822.3,
+      "output_segments": 3
+    },
+    {
+      "file_name": "sample2_2spk_turn.wav",
+      "duration_sec": 10.0,
+      "gt_num_speakers": 2,
+      "eval_num_speakers": 2,
+      "der_percent": 33.24,
+      "execution_time_sec": 2.193,
+      "rtf": 0.219,
+      "rss_memory_mb": 961.9,
+      "output_segments": 5
+    },
+    {
+      "file_name": "sample3_3spk.wav",
+      "duration_sec": 12.0,
+      "gt_num_speakers": 3,
+      "eval_num_speakers": 3,
+      "der_percent": 33.33,
+      "execution_time_sec": 2.602,
+      "rtf": 0.217,
+      "rss_memory_mb": 1023.0,
+      "output_segments": 5
+    }
+  ]
+}
