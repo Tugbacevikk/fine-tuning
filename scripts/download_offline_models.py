@@ -76,8 +76,13 @@ def download_pyannote_model():
 
         token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
         if not token:
-            print("[WARNING] Pyannote indirmesi için HF_TOKEN ortam değişkeni gereklidir. Pyannote indirmesi atlanıyor.")
-            return
+            engine = os.getenv("DIARIZATION_ENGINE", "pyannote").lower()
+            if engine == "pyannote":
+                print("[ERROR] DIARIZATION_ENGINE=pyannote olarak seçilmiş ancak HF_TOKEN ortam değişkeni eksik. Pyannote model indirme başarısız.")
+                sys.exit(1)
+            else:
+                print("[WARNING] Pyannote indirmesi için HF_TOKEN ortam değişkeni gereklidir. Pyannote indirmesi atlanıyor.")
+                return
 
         print("[Pyannote] Pipeline reposu indiriliyor (pyannote/speaker-diarization-3.1)...")
         snapshot_download(

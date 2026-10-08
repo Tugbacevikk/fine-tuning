@@ -59,3 +59,17 @@ def test_pyannote_adapter_lazy_load_failure_handles_exception_cleanly(tmp_path):
         assert adapter._pipeline is None
         res = adapter.diarize("dummy.wav")
         assert res == []
+
+
+def test_pyannote_adapter_lazy_load_with_token_no_local_config(tmp_path):
+    """Verify PyannoteAudioAdapter calls Pipeline.from_pretrained with use_auth_token when local config is absent and token exists."""
+    fake_pipeline_instance = MagicMock()
+
+    with patch.dict(os.environ, {"MODEL_DIR": str(tmp_path), "HF_TOKEN": "hf_dummy_token_123"}), \
+         patch("pyannote.audio.Pipeline.from_pretrained", return_value=fake_pipeline_instance) as mock_from_pretrained:
+        adapter = PyannoteAudioAdapter()
+        adapter._lazy_load_pipeline()
+
+        assert adapter._pipeline is fake_pipeline_instance
+        mock_from_pretrained.assert_called_once_with("pyannote/speaker-diarization-3.1", use_auth_token="hf_dummy_token_123")
+

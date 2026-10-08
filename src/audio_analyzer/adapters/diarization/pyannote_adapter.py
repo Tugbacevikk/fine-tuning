@@ -56,7 +56,7 @@ class PyannoteAudioAdapter(IDiarizer):
                 logger.info("Pyannote.audio 3.1 hattı yükleniyor (Kaynak: %s)...", source)
 
                 kwargs = {}
-                if token and not config_file.exists():
+                if token and config_file is None:
                     kwargs["use_auth_token"] = token
 
                 self._pipeline = Pipeline.from_pretrained(source, **kwargs)
