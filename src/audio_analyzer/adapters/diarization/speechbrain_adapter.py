@@ -260,16 +260,19 @@ class SpeechBrainECAPADiarizer(IDiarizer):
                 LocalSpectralClusterDiarizer,
             )
 
-            fallback_diarizer = LocalSpectralClusterDiarizer(device_config=self.device_config)
+            effective_num_spk = num_speakers if num_speakers is not None else self.num_speakers
+            fallback_diarizer = LocalSpectralClusterDiarizer(
+                device_config=self.device_config, num_speakers=effective_num_spk or 2
+            )
             if isinstance(audio_input, str):
-                return fallback_diarizer.diarize(audio_input)
+                return fallback_diarizer.diarize(audio_input, num_speakers=effective_num_spk)
             else:
                 import tempfile
                 import uuid
                 tmp_path = os.path.join(tempfile.gettempdir(), f"diar_tmp_{uuid.uuid4().hex}.wav")
                 sf.write(tmp_path, audio_input, 16000, subtype="PCM_16")
                 try:
-                    return fallback_diarizer.diarize(tmp_path)
+                    return fallback_diarizer.diarize(tmp_path, num_speakers=effective_num_spk)
                 finally:
                     if os.path.exists(tmp_path):
                         try:

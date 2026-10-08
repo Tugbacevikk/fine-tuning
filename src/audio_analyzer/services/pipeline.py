@@ -345,15 +345,8 @@ class AudioAnalysisPipeline:
         return filtered_words
 
     def _call_diarizer(self, audio_input: str | np.ndarray, num_speakers: int | None = None) -> list:
-        """IDiarizer.diarize adaptörünü çağırır. num_speakers imza uyumunu kontrol eder."""
-        import inspect
-        try:
-            sig = inspect.signature(self.diarizer.diarize)
-            if "num_speakers" in sig.parameters:
-                return self.diarizer.diarize(audio_input, num_speakers=num_speakers)
-        except Exception:
-            pass
-        return self.diarizer.diarize(audio_input)
+        """IDiarizer.diarize adaptörünü çağırır."""
+        return self.diarizer.diarize(audio_input, num_speakers=num_speakers)
 
     def _create_single_speaker_segments(self, audio_duration: float) -> list:
         """Tek konuşmacılı sesler için SPEAKER_00 kapsama segmenti üretir."""

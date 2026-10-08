@@ -103,7 +103,7 @@ async def test_num_speakers_2_propagates_to_diarizer(in_memory_db):
 
 def test_api_num_speakers_input_validation():
     """
-    Doğrular: num_speakers için 0, -3 veya 500 gibi geçersiz değerler HTTP 400 döner.
+    Doğrular: num_speakers için 0, -3 veya 500 gibi geçersiz değerler HTTP 422 döner.
     """
     client = TestClient(app)
     fake_wav = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00\x80\x3e\x00\x00\x00\x7d\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
@@ -114,7 +114,7 @@ def test_api_num_speakers_input_validation():
         files={"file": ("test.wav", fake_wav, "audio/wav")},
         data={"num_speakers": "0"},
     )
-    assert resp.status_code in (400, 422)
+    assert resp.status_code == 422
 
     # num_speakers=500 (Geçersiz)
     resp2 = client.post(
@@ -122,4 +122,4 @@ def test_api_num_speakers_input_validation():
         files={"file": ("test.wav", fake_wav, "audio/wav")},
         data={"num_speakers": "500"},
     )
-    assert resp2.status_code in (400, 422)
+    assert resp2.status_code == 422

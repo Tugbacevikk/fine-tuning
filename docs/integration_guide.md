@@ -40,7 +40,7 @@ Dış sistemler ses analizi başlatmak için `POST /api/v1/analyze` servisini ç
 * `file`: Ses Dosyası (MP3, WAV, FLAC, M4A, OGG)
 * `callback_url` *(Opsiyonel)*: Analiz bittiğinde sonucun gönderileceği Webhook adresi (Sadece HTTPS, private IP'ler engellenir).
 * `num_speakers` *(Opsiyonel)*: Beklenen konuşmacı sayısı (`1` ile `10` arası tamsayı).
-  * `num_speakers=1` gönderildiğinde nöral konuşmacı ayırma (Diarization) adımı **baypas edilir** ve CPU analiz süresi 3-5 kat hızlanır.
+  * `num_speakers=1` gönderildiğinde nöral konuşmacı ayırma (Diarization) adımı **baypas edilir** ve CPU analiz süresi belirgin şekilde hızlanır (Diarization adımı tamamen atlanır).
   * `num_speakers=2` veya üzeri verildiğinde konuşmacı ayırma motoruna hedef konuşmacı kümeleme sayısı enjekte edilir.
 * `external_id` *(Opsiyonel)*: Dış sistemdeki benzersiz çağrı ID'si (Idempotency için aynı external_id ile yapılan tekrarlı istekler var olan `job_id`yi döner).
 

@@ -35,15 +35,23 @@ class PyannoteAudioAdapter(IDiarizer):
         if not self._initialized:
             self._initialized = True
             try:
-                import torch
-                from pyannote.audio import Pipeline
+                from pathlib import Path
+                model_dir_env = os.getenv("MODEL_DIR")
+                if model_dir_env:
+                    pyannote_local = Path(model_dir_env) / "diarization" / "pyannote"
+                else:
+                    project_root = Path(__file__).resolve().parent.parent.parent.parent.parent
+                    pyannote_local = project_root / "storage" / "models" / "diarization" / "pyannote"
 
+                source = str(pyannote_local) if (pyannote_local / "config.yaml").exists() else "pyannote/speaker-diarization-3.1"
                 token = self.use_auth_token
-                logger.info("Pyannote.audio 3.1 hattı yükleniyor...")
-                self._pipeline = Pipeline.from_pretrained(
-                    "pyannote/speaker-diarization-3.1",
-                    token=token,
-                )
+                logger.info("Pyannote.audio 3.1 hattı yükleniyor (Kaynak: %s)...", source)
+
+                kwargs = {}
+                if token and not (pyannote_local / "config.yaml").exists():
+                    kwargs["use_auth_token"] = token
+
+                self._pipeline = Pipeline.from_pretrained(source, **kwargs)
                 if self._pipeline is not None:
                     from audio_analyzer.config import get_settings
                     step = get_settings().diarization_step_sec

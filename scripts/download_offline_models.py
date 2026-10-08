@@ -57,9 +57,31 @@ def download_diarization_model():
         print(f"[WARNING] Standard SpeechBrain indirme uyarısı: {e}")
 
 
+def download_pyannote_model():
+    """Pyannote 3.1 konuşmacı ayrıştırma modelini yerel depolama klasörüne indirir."""
+    pyannote_dir = MODEL_DIR / "diarization" / "pyannote"
+    pyannote_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[MODEL] Pyannote 3.1 Modeli indiriliyor/kontrol ediliyor -> {pyannote_dir}")
+
+    try:
+        import os
+        from pyannote.audio import Pipeline
+
+        token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_TOKEN")
+        if token:
+            pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=token)
+            pipeline.save_pretrained(str(pyannote_dir))
+            print("[OK] Pyannote 3.1 Modeli yerel klasöre kaydedildi!")
+        else:
+            print("[WARNING] Pyannote indirmesi için HF_TOKEN ortam değişkeni gereklidir.")
+    except Exception as e:
+        print(f"[WARNING] Pyannote indirme uyarısı: {e}")
+
+
 if __name__ == "__main__":
     print("[START] Çevrimdışı Yapay Zeka Model İndirme Başlatılıyor...")
     download_stt_model("small")
     download_vad_model()
     download_diarization_model()
+    download_pyannote_model()
     print("[DONE] Çevrimdışı model paketleme tamamlandı!")

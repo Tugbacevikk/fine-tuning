@@ -28,7 +28,7 @@ class MockSTTEngine(ISTTEngine):
 class MockDiarizer(IDiarizer):
     """Sistem testleri için taklit Diarization motoru."""
 
-    def diarize(self, audio_path: str) -> list[DiarizationSegment]:
+    def diarize(self, audio_path: str, num_speakers: int | None = None) -> list[DiarizationSegment]:
         return [
             DiarizationSegment(speaker_id="SPEAKER_00", start_time=0.0, end_time=0.95),
             DiarizationSegment(speaker_id="SPEAKER_01", start_time=0.98, end_time=2.6),

@@ -220,7 +220,8 @@ class LocalSpectralClusterDiarizer(IDiarizer):
             std = np.std(window_features, axis=0) + 1e-6
             norm_features = (window_features - mean) / std
 
-            raw_labels = self._cluster_cosine_kmeans(norm_features, k=self.num_speakers)
+            k_clusters = num_speakers if num_speakers is not None else self.num_speakers
+            raw_labels = self._cluster_cosine_kmeans(norm_features, k=k_clusters)
 
             # RMS Sessizlik Eşiği (Sessiz Es/Nefes Boşluğu Tespiti)
             silence_thresh = np.percentile(energies, 20)

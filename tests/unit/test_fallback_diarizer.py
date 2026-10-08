@@ -6,17 +6,17 @@ from audio_analyzer.services.pipeline import AudioAnalysisPipeline
 
 
 class MockFailingDiarizer(IDiarizer):
-    def diarize(self, audio_path: str) -> list[DiarizationSegment]:
+    def diarize(self, audio_path: str, num_speakers: int | None = None) -> list[DiarizationSegment]:
         raise RuntimeError("Primary diarizer GPU out of memory")
 
 
 class MockEmptyDiarizer(IDiarizer):
-    def diarize(self, audio_path: str) -> list[DiarizationSegment]:
+    def diarize(self, audio_path: str, num_speakers: int | None = None) -> list[DiarizationSegment]:
         return []
 
 
 class MockSuccessfulDiarizer(IDiarizer):
-    def diarize(self, audio_path: str) -> list[DiarizationSegment]:
+    def diarize(self, audio_path: str, num_speakers: int | None = None) -> list[DiarizationSegment]:
         return [
             DiarizationSegment(speaker_id="SPEAKER_00", start_time=0.0, end_time=2.0),
             DiarizationSegment(speaker_id="SPEAKER_01", start_time=2.1, end_time=4.0),
@@ -64,7 +64,7 @@ def test_conditional_diarization_single_speaker_bypasses_engine():
         def __init__(self):
             self.called = False
 
-        def diarize(self, audio_path: str):
+        def diarize(self, audio_path: str, num_speakers: int | None = None):
             self.called = True
             return []
 
@@ -78,3 +78,23 @@ def test_conditional_diarization_single_speaker_bypasses_engine():
     assert tracker_diarizer.called is False
     assert len(utterances) == 1
     assert utterances[0].speaker_id == "SPEAKER_00"
+
+
+def test_failing_diarizer_called_exactly_once():
+    """Doğrular: Çöken bir motor FallbackDiarizer tarafından tam olarak 1 kez çağrılır (çift çalıştırma yapılmaz)."""
+    class CountingFailingDiarizer(IDiarizer):
+        def __init__(self):
+            self.call_count = 0
+
+        def diarize(self, audio_path: str, num_speakers: int | None = None):
+            self.call_count += 1
+            raise RuntimeError("Engine CUDA OOM Failure")
+
+    failing_primary = CountingFailingDiarizer()
+    successful_fallback = MockSuccessfulDiarizer()
+    diarizer = FallbackDiarizer(primary_diarizer=failing_primary, fallback_diarizers=[successful_fallback])
+
+    res = diarizer.diarize("test.wav")
+    assert failing_primary.call_count == 1
+    assert len(res) == 2
+    assert res[0].speaker_id == "SPEAKER_00"

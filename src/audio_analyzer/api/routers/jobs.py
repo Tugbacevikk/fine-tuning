@@ -142,8 +142,6 @@ async def upload_and_analyze_audio(
     'num_speakers=1' gönderilirse diarization bypass edilerek analiz süresi düşürülür.
     """
     target_speakers = num_speakers if num_speakers is not None else speakers
-    if target_speakers is not None and (target_speakers < 1 or target_speakers > 10):
-        raise HTTPException(status_code=400, detail="Konuşmacı sayısı (num_speakers) 1 ile 10 arasında olmalıdır.")
 
     await rate_limiter.check_rate_limit(request)
 

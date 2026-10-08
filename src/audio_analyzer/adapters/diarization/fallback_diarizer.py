@@ -22,8 +22,6 @@ class FallbackDiarizer(IDiarizer):
         self.fallbacks = fallback_diarizers or []
 
     def diarize(self, audio_path: str, num_speakers: Optional[int] = None) -> List[DiarizationSegment]:
-        import inspect
-
         chain = [self.primary] + self.fallbacks
         for i, engine in enumerate(chain):
             engine_name = engine.__class__.__name__
@@ -31,15 +29,13 @@ class FallbackDiarizer(IDiarizer):
                 logger.info(
                     "Diarization motoru deneniyor: %s (Adım %d/%d)", engine_name, i + 1, len(chain)
                 )
-                try:
-                    sig = inspect.signature(engine.diarize)
-                    if "num_speakers" in sig.parameters:
+                if num_speakers is not None:
+                    try:
                         segments = engine.diarize(audio_path, num_speakers=num_speakers)
-                    else:
+                    except TypeError:
                         segments = engine.diarize(audio_path)
-                except Exception:
+                else:
                     segments = engine.diarize(audio_path)
-
                 if segments and len(segments) > 0:
                     return segments
 
