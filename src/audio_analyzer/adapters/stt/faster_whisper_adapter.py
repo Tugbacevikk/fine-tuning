@@ -69,6 +69,8 @@ class FasterWhisperAdapter(ISTTEngine):
             else None
         )
 
+        use_vad_filter = os.getenv("WHISPER_VAD_FILTER", "false").lower() == "true"
+
         if self._batched_model is not None and self.device_config.device == "cuda":
             segments, info = self._batched_model.transcribe(
                 audio_path,
@@ -81,11 +83,11 @@ class FasterWhisperAdapter(ISTTEngine):
                 temperature=0.0,
                 repetition_penalty=1.2,
                 no_repeat_ngram_size=3,
-                no_speech_threshold=0.8,
+                no_speech_threshold=0.6,
                 compression_ratio_threshold=2.4,
                 log_prob_threshold=None,
-                vad_filter=True,
-                vad_parameters=vad_params,
+                vad_filter=use_vad_filter,
+                vad_parameters=vad_params if use_vad_filter else None,
             )
         else:
             segments, info = self._model.transcribe(
@@ -98,11 +100,11 @@ class FasterWhisperAdapter(ISTTEngine):
                 temperature=0.0,
                 repetition_penalty=1.2,
                 no_repeat_ngram_size=3,
-                no_speech_threshold=0.8,
+                no_speech_threshold=0.6,
                 compression_ratio_threshold=2.4,
                 log_prob_threshold=None,
-                vad_filter=True,
-                vad_parameters=vad_params,
+                vad_filter=use_vad_filter,
+                vad_parameters=vad_params if use_vad_filter else None,
             )
 
         words: list[WordSegment] = []

@@ -65,7 +65,9 @@ def _build_pipeline() -> AudioAnalysisPipeline:
         )
 
         primary_diarizer = SherpaOnnxAudioAdapter(
-            device_config=device_config, num_speakers=settings.target_num_speakers
+            device_config=device_config,
+            num_speakers=settings.target_num_speakers,
+            cluster_threshold=settings.sherpa_cluster_threshold,
         )
     elif diar_engine_name in ("community1", "pyannote"):
         primary_diarizer = community1_diarizer
@@ -94,7 +96,7 @@ def _build_pipeline() -> AudioAnalysisPipeline:
 
     # 3. Modelleri sunucu açılışında belleğe ısındır (Warm-Up & Pre-Load)
     try:
-        logger.info("Yapay Zeka modelleri (FasterWhisper & Pyannote.audio) belleğe yükleniyor...")
+        logger.info("Yapay Zeka modelleri (FasterWhisper & %s) belleğe yükleniyor...", primary_diarizer.__class__.__name__)
         if hasattr(stt_engine, "_lazy_load_model"):
             stt_engine._lazy_load_model()
         target_diar = diarizer.primary if hasattr(diarizer, "primary") else diarizer

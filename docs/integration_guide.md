@@ -6,10 +6,10 @@ Bu doküman, Ses Analizi Platformu'nun üçüncü parti sistemlere (Şehir Hasta
 
 ## 1. 🌐 Çevrimdışı (Air-Gapped / On-Premises) Kurulum
 
-Sistem internete hiç bağlanmadan tam çevrimdışı çalışabilir. Modeller sunucuya bir kez indirildikten sonra `HF_HUB_OFFLINE=1` modunda devreye alınır:
+Sistem internete hiç bağlanmadan tam çevrimdışı çalışabilir. Birincil diarization motoru **Sherpa-ONNX** %100 Token-Free ve çevrimdışıdır (Zor durum kademesi olan Pyannote Community-1 ise yalnızca ilk model indirme adımında `HF_TOKEN` gerektirir). Modeller sunucuya bir kez indirildikten sonra `HF_HUB_OFFLINE=1` modunda devreye alınır:
 
 ```bash
-# 1. Modelleri tek seferlik yerel klasöre paketleyin
+# 1. Modelleri tek seferlik yerel klasöre paketleyin (Sherpa-ONNX token gerektirmez)
 python scripts/download_offline_models.py
 
 # 2. Çevrimdışı modda sunucuyu başlatın

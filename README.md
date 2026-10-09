@@ -9,8 +9,8 @@ Yüksek performanslı, modüler, **Clean Architecture / Code-First** prensipleri
 ## Özellikler
 - **Speech-to-Text (STT)**: Faster-Whisper ile zaman damgalı metne dönüştürme (`tiny`, `small`, `medium` model desteği).
 - **%100 Çevrimdışı Speaker Diarization**:
-  - **Birincil Motor**: Sherpa-ONNX (%100 Çevrimdışı, Token-Free, Pyannote segmentation-3.0 ONNX + 3DSpeaker ONNX embedding, 4.8s hızlı model yükleme & 632 MB RAM footprint).
-  - **Zor Durum Kademesi**: Pyannote Community-1 (`pyannote.audio 4.x`, opsiyonel `DIARIZATION_ESCALATION=unknown_speakers` yükseltme kademesi).
+  - **Birincil Motor**: Sherpa-ONNX (%100 Çevrimdışı, Token-Free, Pyannote segmentation-3.0 ONNX + 3DSpeaker ONNX embedding, 4.8s model yükleme & 632 MB RAM footprint).
+  - **Zor Durum Kademesi**: Pyannote Community-1 (`pyannote.audio 4.x`, opsiyonel `DIARIZATION_ESCALATION=unknown_speakers` yükseltme kademesi; indirme için `HF_TOKEN` gerektirir).
   - **Yedek Motorlar**: SpeechBrain ECAPA-TDNN -> Local Spectral Clustering.
 - **SemanticRefiner & Yerel LLM Entegrasyonu**:
   - Alan Odaklı Kurallar (`domain_mode="call_center"` ile müşteri/temsilci geçiş tespiti ve rol sabitleme).
@@ -24,10 +24,10 @@ Yüksek performanslı, modüler, **Clean Architecture / Code-First** prensipleri
 
 ## 🏢 Kurumsal Çevrimdışı (Air-Gapped / Token-Free) Yapılandırma
 
-Sistem, internete hiç çıkmadan ve **herhangi bir HuggingFace Token'ına ihtiyaç duymadan (Token-Free)** %100 yerel modda çalışır:
+Sistem, internete hiç çıkmadan ve **Sherpa-ONNX motoru ile herhangi bir HuggingFace Token'ına ihtiyaç duymadan (Token-Free)** %100 yerel modda çalışır:
 
-* **Çevrimdışı (Air-Gapped) Çalıştırma:** Modeller yerel diskinizdeki önbellekten veya `storage/models/` klasöründen okunur. Herhangi bir dış API veya HuggingFace token zorunluluğu yoktur.
-* **Token-Free Diarization:** **SpeechBrain ECAPA-TDNN** ve **Local Spectral Cluster** diyarizasyon motorları tamamen yerel matematiksel vektör hesaplaması yapar ve internet/token gerektirmez. `TARGET_NUM_SPEAKERS` ortam değişkeni ayarlanmadığında dinamik konuşmacı tespiti devreye girer. Dinamik tespitte kullanılan `DIARIZATION_THRESHOLD` eşik değerinin optimum sonuç için gerçek kayıtlarla ayarlanması (tuning) gerekmektedir.
+* **Çevrimdışı (Air-Gapped) Çalıştırma:** Modeller yerel diskinizdeki önbellekten veya `storage/models/` klasöründen okunur.
+* **Token-Free Diarization:** **Sherpa-ONNX**, **SpeechBrain ECAPA-TDNN** ve **Local Spectral Cluster** motorları token-free olarak yerel çalışır (Pyannote Community-1 modeli ise ilk indirme için `HF_TOKEN` gerektirir). `TARGET_NUM_SPEAKERS` ortam değişkeni ayarlanmadığında dinamik konuşmacı tespiti devreye girer. Dinamik tespitte kullanılan `DIARIZATION_THRESHOLD` (varsayılan: 0.55) henüz deneysel olarak kalibre edilmemiştir ve gerçek kayıtlarla ayarlanması (tuning) gerekmektedir.
 
 ## Kurulum ve Başlatma
 

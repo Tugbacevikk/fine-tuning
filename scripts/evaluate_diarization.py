@@ -191,6 +191,64 @@ def compare_benchmarks(old_json_path: Path, new_json_path: Path):
         json.dump(comp_report, f, indent=2, ensure_ascii=False)
 
 
+def generate_markdown_report(old_json_path: Path, new_json_path: Path) -> str:
+    """İki benchmark JSON dosyasından Markdown tablosu ve Wilcoxon testi özeti üretir."""
+    if not old_json_path.exists() or not new_json_path.exists():
+        logger.error(
+            "[ERROR] Karşılaştırılacak JSON dosyaları bulunamadı: %s veya %s",
+            old_json_path,
+            new_json_path,
+        )
+        sys.exit(1)
+
+    with open(old_json_path, "r", encoding="utf-8") as f:
+        old_data = json.load(f)
+    with open(new_json_path, "r", encoding="utf-8") as f:
+        new_data = json.load(f)
+
+    old_s = old_data.get("summary", {})
+    new_s = new_data.get("summary", {})
+
+    old_map = {r["file_name"]: r["der_percent"] for r in old_data.get("details", [])}
+    new_map = {r["file_name"]: r["der_percent"] for r in new_data.get("details", [])}
+    common = sorted(list(set(old_map.keys()) & set(new_map.keys())))
+
+    old_ders = np.array([old_map[f] for f in common])
+    new_ders = np.array([new_map[f] for f in common])
+
+    try:
+        if np.all(old_ders == new_ders):
+            p_val = 1.0
+        else:
+            w_res = wilcoxon(old_ders, new_ders)
+            p_val = float(w_res.pvalue)
+    except Exception:
+        p_val = 1.0
+
+    significance = (
+        "İstatistiksel Olarak Anlamlı Fark Yok (p >= 0.05)"
+        if p_val >= 0.05
+        else "İstatistiksel Olarak Anlamlı Fark Var (p < 0.05)"
+    )
+
+    old_eng = str(old_data.get("engine", "ECAPA")).upper()
+    new_eng = str(new_data.get("engine", "SHERPA_ONNX")).upper()
+
+    md_table = f"""| Metrik / Performans Göstergesi | {old_eng} (Eski) | {new_eng} (Yeni) | Fark / Değişim |
+| :--- | :---: | :---: | :---: |
+| **Model Yükleme Süresi (`load_time_sec`)** | `{old_data.get('load_time_sec', 0.0):.3f}s` | `{new_data.get('load_time_sec', 0.0):.3f}s` | `{new_data.get('load_time_sec', 0.0) - old_data.get('load_time_sec', 0.0):+.3f}s` |
+| **Ortalama DER ± Std** | `%{old_s.get('avg_der_percent', 0.0):.2f} ± %{old_s.get('std_der_percent', 0.0):.2f}` | `%{new_s.get('avg_der_percent', 0.0):.2f} ± %{new_s.get('std_der_percent', 0.0):.2f}` | `%{new_s.get('avg_der_percent', 0.0) - old_s.get('avg_der_percent', 0.0):+.2f}` |
+| **Kaçırılan Konuşma (% Missed)** | `%{old_s.get('avg_missed_speech_percent', 0.0):.2f}` | `%{new_s.get('avg_missed_speech_percent', 0.0):.2f}` | `%{new_s.get('avg_missed_speech_percent', 0.0) - old_s.get('avg_missed_speech_percent', 0.0):+.2f}` |
+| **Yanlış Alarm (% False Alarm)** | `%{old_s.get('avg_false_alarm_percent', 0.0):.2f}` | `%{new_s.get('avg_false_alarm_percent', 0.0):.2f}` | `%{new_s.get('avg_false_alarm_percent', 0.0) - old_s.get('avg_false_alarm_percent', 0.0):+.2f}` |
+| **Konuşmacı Karmaşası (% Confusion)** | `%{old_s.get('avg_speaker_confusion_percent', 0.0):.2f}` | `%{new_s.get('avg_speaker_confusion_percent', 0.0):.2f}` | `%{new_s.get('avg_speaker_confusion_percent', 0.0) - old_s.get('avg_speaker_confusion_percent', 0.0):+.2f}` |
+| **Konuşmacı Sayısı Eşleşme Oranı** | `%{old_s.get('speaker_match_rate_percent', 0.0):.2f}` | `%{new_s.get('speaker_match_rate_percent', 0.0):.2f}` | `%{new_s.get('speaker_match_rate_percent', 0.0) - old_s.get('speaker_match_rate_percent', 0.0):+.2f}` |
+| **Medyan İşlem Süresi (P50)** | `{old_s.get('median_time_sec', 0.0):.3f}s` | `{new_s.get('median_time_sec', 0.0):.3f}s` | `{new_s.get('median_time_sec', 0.0) - old_s.get('median_time_sec', 0.0):+.3f}s` |
+| **P95 İşlem Süresi (P95)** | `{old_s.get('p95_time_sec', 0.0):.3f}s` | `{new_s.get('p95_time_sec', 0.0):.3f}s` | `{new_s.get('p95_time_sec', 0.0) - old_s.get('p95_time_sec', 0.0):+.3f}s` |
+| **Maksimum RAM Kullanımı (RSS)** | `{old_s.get('max_rss_mb', 0.0):.1f} MB` | `{new_s.get('max_rss_mb', 0.0):.1f} MB` | `{new_s.get('max_rss_mb', 0.0) - old_s.get('max_rss_mb', 0.0):+.1f} MB` |
+| **Wilcoxon p-değeri** | - | `p = {p_val:.4f}` | {significance} |"""
+    return md_table
+
+
 def run_evaluation(
     data_dir: Path,
     engine_name: str,
@@ -435,6 +493,12 @@ if __name__ == "__main__":
         help="İki benchmark JSON dosyasını karşılaştırır (--compare eski.json yeni.json)",
     )
     parser.add_argument(
+        "--report-md",
+        nargs=2,
+        metavar=("ESKI_JSON", "YENI_JSON"),
+        help="İki benchmark JSON dosyasından Markdown tablosu üretir (--report-md eski.json yeni.json)",
+    )
+    parser.add_argument(
         "--unknown-speakers",
         action="store_true",
         help="Konuşmacı sayısı bilinmiyor modunda çalıştır (num_speakers=None)",
@@ -453,7 +517,10 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    if args.compare:
+    if args.report_md:
+        table = generate_markdown_report(Path(args.report_md[0]), Path(args.report_md[1]))
+        print("\n" + table + "\n")
+    elif args.compare:
         compare_benchmarks(Path(args.compare[0]), Path(args.compare[1]))
     else:
         run_evaluation(

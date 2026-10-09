@@ -61,3 +61,73 @@ def test_sherpa_onnx_adapter_numpy_input():
 
     assert len(segments) > 0
     assert isinstance(segments[0], DiarizationSegment)
+
+
+def test_cluster_preservation_filter():
+    adapter = SherpaOnnxAudioAdapter(min_duration_on=0.3)
+
+    class MockRawSegment:
+        def __init__(self, speaker, start, end):
+            self.speaker = speaker
+            self.start = start
+            self.end = end
+
+        @property
+        def duration(self):
+            return self.end - self.start
+
+    raw_segs = [
+        MockRawSegment(speaker=0, start=0.0, end=1.0),
+        MockRawSegment(speaker=1, start=1.5, end=2.5),
+        MockRawSegment(speaker=2, start=3.0, end=3.1),  # 0.1s duration < 0.3s
+    ]
+
+    # Without num_speakers: speaker 2 segment should be filtered out
+    filtered = adapter._apply_cluster_preservation_filter(raw_segs, num_speakers_requested=None)
+    spk_ids = {s.speaker_id for s in filtered}
+    assert "SPEAKER_02" not in spk_ids
+
+    # With num_speakers=3: speaker 2 segment should be preserved!
+    filtered_preserved = adapter._apply_cluster_preservation_filter(raw_segs, num_speakers_requested=3)
+    spk_ids_preserved = {s.speaker_id for s in filtered_preserved}
+    assert "SPEAKER_02" in spk_ids_preserved
+
+
+def test_sherpa_onnx_multithreaded_lock(tmp_path):
+    adapter = SherpaOnnxAudioAdapter()
+
+    mock_pipeline = MagicMock()
+    mock_raw_seg = MagicMock()
+    mock_raw_seg.speaker = 0
+    mock_raw_seg.start = 0.0
+    mock_raw_seg.end = 1.0
+    mock_raw_seg.duration = 1.0
+    mock_result = MagicMock()
+    mock_result.sort_by_start_time.return_value = [mock_raw_seg]
+    mock_pipeline.process.return_value = mock_result
+
+    adapter._pipeline = mock_pipeline
+    adapter._config = MagicMock()
+    adapter._config.clustering.num_clusters = -1
+    adapter._initialized = True
+
+    results = {}
+
+    def worker(num_spk, key):
+        segs = adapter.diarize(np.zeros(16000, dtype=np.float32), num_speakers=num_spk)
+        results[key] = segs
+
+    import threading
+    t1 = threading.Thread(target=worker, args=(2, "t1"))
+    t2 = threading.Thread(target=worker, args=(3, "t2"))
+
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    assert "t1" in results and "t2" in results
+    assert len(results["t1"]) > 0
+    assert len(results["t2"]) > 0
+
+

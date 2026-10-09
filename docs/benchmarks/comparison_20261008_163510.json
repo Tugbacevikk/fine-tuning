@@ -1,0 +1,11 @@
+{
+  "old_file": "diarization_sherpa_onnx_20261008_153539.json",
+  "new_file": "diarization_sherpa_onnx_20261008_163455.json",
+  "num_common_files": 40,
+  "mean_diff_percent": 0.98,
+  "median_diff_percent": 0.64,
+  "improved_count": 1,
+  "degraded_count": 26,
+  "unchanged_count": 13,
+  "wilcoxon_pvalue": 0.0001
+}

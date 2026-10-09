@@ -72,12 +72,16 @@ class SemanticRefiner:
             import os
             import urllib.request
 
-            timeout_sec = float(os.getenv("OLLAMA_TIMEOUT_SEC", "10.0"))
+            timeout_sec = float(os.getenv("OLLAMA_TIMEOUT_SEC", "45.0"))
+            payload = {
+                "model": self.model_name,
+                "prompt": prompt,
+                "stream": False,
+                "options": {"num_predict": 256, "temperature": 0.1},
+            }
             req = urllib.request.Request(
                 self.ollama_url,
-                data=json.dumps(
-                    {"model": self.model_name, "prompt": prompt, "stream": False}
-                ).encode("utf-8"),
+                data=json.dumps(payload).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
@@ -114,7 +118,7 @@ class SemanticRefiner:
         import os
         pipeline_profile = os.getenv("PIPELINE_PROFILE", "full").lower()
         if self.use_llm and pipeline_profile != "feedback":
-            self._refine_with_llm(utterances)
+            utterances = self._refine_with_llm(utterances)
 
         # 2. Alan odaklı (domain_mode) kural tetikleyicileri tanımlıysa bölme kurallarını uygula
         refined: list[TranscriptUtterance] = []
@@ -137,7 +141,8 @@ class SemanticRefiner:
         else:
             anchored_utterances = refined
 
-        return self._normalize_short_gaps(anchored_utterances)
+        smoothed = self._smooth_orphan_and_sandwich_speakers(anchored_utterances)
+        return self._normalize_short_gaps(smoothed)
 
     def _split_dialogue_turns(
         self, utt: TranscriptUtterance
@@ -308,22 +313,85 @@ class SemanticRefiner:
 
         return text
 
-    def _refine_with_llm(self, utterances: list[TranscriptUtterance]) -> list[TranscriptUtterance] | None:
+    def _refine_with_llm(self, utterances: list[TranscriptUtterance]) -> list[TranscriptUtterance]:
         """
-        Ollama LLM kullanarak diyalog bloklarını anlamsal olarak gözden geçirir (deneysel).
+        Yerel Ollama LLM (Llama-3.2 / Qwen-2.5) kullanarak konuşmacı etiketlerini anlamsal bütüne göre düzeltir.
+        Ollama yanıt vermezse veya JSON ayrıştırma hatası olursa orijinal konuşmacı listesini güvenle döndürür (fail-open).
         """
+        if not utterances:
+            return utterances
+
+        import json
         import logging
+        import re
+
         logger = logging.getLogger(__name__)
-        logger.warning(
-            "UYARI: LLM iyileştirme adımı deneyseldir; üretilen ham yanıt henüz yapılandırılmış çıktıya dönüştürülüp uygulanmamaktadır."
-        )
-        transcript_text = "\n".join([f"{u.speaker_id}: {u.text}" for u in utterances])
+
+        payload = [
+            {"idx": idx, "text": u.text}
+            for idx, u in enumerate(utterances)
+        ]
+
+        payload_json = json.dumps(payload, ensure_ascii=False)
+
         prompt = (
-            f"Aşağıdaki konuşma dökümünde konuşmacı geçişlerini kontrol et:\n\n{transcript_text}\n\n"
-            "Düzeltilmiş konuşmacı bloklarını formatla."
+            "Sen uzman bir telefon konuşması diyalog ayrıştırma asistanısın.\n"
+            "Aşağıdaki diyalog dökümünde yalnızca 2 taraf konuşmaktadır: Temsilci/Görevli (SPEAKER_00) ve Müşteri/Hasta (SPEAKER_01).\n"
+            "Her 'idx' cümlesinin Temsilci mi (SPEAKER_00) yoksa Müşteri mi (SPEAKER_01) olduğunu anlamsal içeriğe göre tespit et.\n"
+            "ÇIKTI FORMATI: SADECE aşağıdaki JSON formatında geçerli bir JSON listesi döndür. Başka hiçbir açıklama yazma!\n"
+            'Örnek: [{"idx": 0, "speaker": "SPEAKER_00"}, {"idx": 1, "speaker": "SPEAKER_00"}, {"idx": 2, "speaker": "SPEAKER_00"}, {"idx": 3, "speaker": "SPEAKER_01"}]\n\n'
+            f"GİRDİ CÜMLELERİ:\n{payload_json}"
         )
-        self._query_ollama_llm(prompt)
-        return None
+
+        raw_response = self._query_ollama_llm(prompt)
+        if not raw_response:
+            logger.info("Ollama LLM servisine ulaşılamadı veya zaman aşımına uğradı. Orijinal döküm korunuyor.")
+            return utterances
+
+        try:
+            clean_resp = raw_response.strip()
+            if "```json" in clean_resp:
+                clean_resp = clean_resp.split("```json")[1].split("```")[0].strip()
+            elif "```" in clean_resp:
+                clean_resp = clean_resp.split("```")[1].split("```")[0].strip()
+
+            match = re.search(r'\[.*\]', clean_resp, re.DOTALL)
+            if match:
+                clean_resp = match.group(0)
+
+            parsed_list = json.loads(clean_resp)
+            if not isinstance(parsed_list, list):
+                return utterances
+
+            spk_map = {}
+            for item in parsed_list:
+                if isinstance(item, dict) and "idx" in item and "speaker" in item:
+                    spk_map[int(item["idx"])] = str(item["speaker"]).strip()
+
+            if not spk_map:
+                return utterances
+
+            updated_utterances: list[TranscriptUtterance] = []
+            for idx, u in enumerate(utterances):
+                new_spk = spk_map.get(idx, u.speaker_id)
+                if not new_spk.startswith("SPEAKER_"):
+                    new_spk = f"SPEAKER_{new_spk}"
+                updated_utterances.append(
+                    TranscriptUtterance(
+                        id=u.id,
+                        speaker_id=new_spk,
+                        start_time=u.start_time,
+                        end_time=u.end_time,
+                        text=u.text,
+                    )
+                )
+
+            logger.info("Ollama LLM anlamsal konuşmacı düzeltmesi başarıyla uygulandı (%d segment).", len(spk_map))
+            return updated_utterances
+
+        except Exception as err:
+            logger.warning("Ollama LLM yanıtı ayrıştırılamadı (%s). Orijinal döküm korunuyor.", err)
+            return utterances
 
     def _split_if_role_transition(self, utt: TranscriptUtterance) -> list[TranscriptUtterance]:
         text = utt.text.strip()
@@ -469,3 +537,75 @@ class SemanticRefiner:
             i += 1
 
         return merged
+
+    def _smooth_orphan_and_sandwich_speakers(
+        self, utterances: list[TranscriptUtterance]
+    ) -> list[TranscriptUtterance]:
+        """
+        1. Sandviç Konuşmacı Düzeltmesi (Sandwich Pattern):
+           A -> B -> A sıralamasında B'nin süresi kısa (< 0.8s) veya metni az ise
+           B konuşmacısı parazit geçiş sayılarak A konuşmacısına geri bağlanır.
+        2. Mikro Gürültü / Punctuation-only Segmentler:
+           0.35s'den kısa veya yalnızca noktalama (?, ., !) içeren mikro parçaların
+           konuşmacı kimliği komşu konuşmacıya devredilir.
+        """
+        if len(utterances) <= 1:
+            return utterances
+
+        result: list[TranscriptUtterance] = []
+        for u in utterances:
+            result.append(
+                TranscriptUtterance(
+                    id=u.id,
+                    speaker_id=u.speaker_id,
+                    start_time=u.start_time,
+                    end_time=u.end_time,
+                    text=u.text,
+                )
+            )
+
+        # 1. Sandviç Geçiş Düzeltmesi (A -> B -> A)
+        for i in range(1, len(result) - 1):
+            prev_utt = result[i - 1]
+            curr_utt = result[i]
+            next_utt = result[i + 1]
+
+            if prev_utt.speaker_id == next_utt.speaker_id and curr_utt.speaker_id != prev_utt.speaker_id:
+                duration = curr_utt.end_time - curr_utt.start_time
+                txt_words = curr_utt.text.strip().split()
+                if duration < 0.8 or len(txt_words) <= 3:
+                    result[i] = TranscriptUtterance(
+                        id=curr_utt.id,
+                        speaker_id=prev_utt.speaker_id,
+                        start_time=curr_utt.start_time,
+                        end_time=curr_utt.end_time,
+                        text=curr_utt.text,
+                    )
+
+        # 2. Mikro Parazit / Punctuation-only Segment Yumuşatma
+        for i in range(len(result)):
+            curr_utt = result[i]
+            duration = curr_utt.end_time - curr_utt.start_time
+            clean_txt = curr_utt.text.strip()
+
+            is_pure_punct = clean_txt in ("?", ".", "!", "...", "") or len(clean_txt) <= 2
+            is_ultra_short = duration < 0.35
+
+            if is_pure_punct or is_ultra_short:
+                target_spk = None
+                if i > 0:
+                    target_spk = result[i - 1].speaker_id
+                elif i + 1 < len(result):
+                    target_spk = result[i + 1].speaker_id
+
+                if target_spk and target_spk != curr_utt.speaker_id:
+                    result[i] = TranscriptUtterance(
+                        id=curr_utt.id,
+                        speaker_id=target_spk,
+                        start_time=curr_utt.start_time,
+                        end_time=curr_utt.end_time,
+                        text=curr_utt.text,
+                    )
+
+        return result
+

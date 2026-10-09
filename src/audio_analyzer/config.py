@@ -78,6 +78,7 @@ class Settings:
     diarization_escalation: str = field(default_factory=lambda: os.getenv("DIARIZATION_ESCALATION", "off").lower())
     diarization_step_sec: float = field(default_factory=lambda: float(os.getenv("DIARIZATION_STEP_SEC", "0.3")))
     diarization_threshold: float = field(default_factory=lambda: float(os.getenv("DIARIZATION_THRESHOLD", "0.55")))
+    sherpa_cluster_threshold: float = field(default_factory=lambda: float(os.getenv("SHERPA_CLUSTER_THRESHOLD", "0.62")))
     target_num_speakers: int | None = field(
         default_factory=lambda: _opt_int("TARGET_NUM_SPEAKERS") or _opt_int("NUM_SPEAKERS")
     )
