@@ -79,6 +79,11 @@ class Settings:
     diarization_step_sec: float = field(default_factory=lambda: float(os.getenv("DIARIZATION_STEP_SEC", "0.3")))
     diarization_threshold: float = field(default_factory=lambda: float(os.getenv("DIARIZATION_THRESHOLD", "0.55")))
     sherpa_cluster_threshold: float = field(default_factory=lambda: float(os.getenv("SHERPA_CLUSTER_THRESHOLD", "0.62")))
+    sherpa_embedding_model: str = field(
+        default_factory=lambda: os.getenv(
+            "SHERPA_EMBEDDING_MODEL", "3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx"
+        )
+    )
     target_num_speakers: int | None = field(
         default_factory=lambda: _opt_int("TARGET_NUM_SPEAKERS") or _opt_int("NUM_SPEAKERS")
     )

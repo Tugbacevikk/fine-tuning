@@ -12,6 +12,7 @@ import argparse
 import datetime
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -50,8 +51,16 @@ def parse_rttm(rttm_path: Path, uri: str) -> tuple[Annotation, int]:
     return annotation, len(speakers)
 
 
-def load_single_engine(engine_name: str, device_config: DeviceConfig):
+def load_single_engine(
+    engine_name: str,
+    device_config: DeviceConfig,
+    cluster_threshold: float | None = None,
+    embedding_model: str | None = None,
+):
     """Belirtilen motor adaptörünü doğrudan yükler (Fallback zinciri olmadan)."""
+    if embedding_model:
+        os.environ["SHERPA_EMBEDDING_MODEL"] = embedding_model
+
     if engine_name in ("pyannote", "community1"):
         from audio_analyzer.adapters.diarization.pyannote_adapter import PyannoteAudioAdapter
 
@@ -77,7 +86,9 @@ def load_single_engine(engine_name: str, device_config: DeviceConfig):
     elif engine_name in ("sherpa_onnx", "sherpa"):
         from audio_analyzer.adapters.diarization.sherpa_onnx_adapter import SherpaOnnxAudioAdapter
 
-        adapter = SherpaOnnxAudioAdapter(device_config=device_config)
+        adapter = SherpaOnnxAudioAdapter(
+            device_config=device_config, cluster_threshold=cluster_threshold
+        )
         adapter._lazy_load_pipeline()
         if adapter._pipeline is None:
             raise RuntimeError("Sherpa-ONNX yerel ONNX modelleri yüklenemedi.")
@@ -254,6 +265,8 @@ def run_evaluation(
     engine_name: str,
     unknown_speakers: bool,
     collar: float = 0.25,
+    threshold: float | None = None,
+    embedding_model: str | None = None,
     seed: int = 42,
 ):
     wav_files = sorted(list(data_dir.glob("*.wav")))
@@ -285,7 +298,12 @@ def run_evaluation(
         if engine_name == "chain":
             diarizer = load_chain_engine(device_config)
         else:
-            diarizer = load_single_engine(engine_name, device_config)
+            diarizer = load_single_engine(
+                engine_name,
+                device_config,
+                cluster_threshold=threshold,
+                embedding_model=embedding_model,
+            )
     except Exception as load_err:
         logger.error("[ERROR] Motor yükleme başarısız oldu (%s): %s", engine_name, load_err)
         sys.exit(1)
@@ -510,6 +528,18 @@ if __name__ == "__main__":
         help="DER tolerans penceresi (saniye cinsinden, varsayılan: 0.25)",
     )
     parser.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Kümeleme eşik değeri (Sherpa-ONNX cluster threshold, varsayılan: 0.50 / config)",
+    )
+    parser.add_argument(
+        "--embedding-model",
+        type=str,
+        default=None,
+        help="Sherpa-ONNX embedding model ONNX dosya adı (örn: 3dspeaker...onnx veya wespeaker...onnx)",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -528,5 +558,7 @@ if __name__ == "__main__":
             engine_name=args.engine,
             unknown_speakers=args.unknown_speakers,
             collar=args.collar,
+            threshold=args.threshold,
+            embedding_model=args.embedding_model,
             seed=args.seed,
         )

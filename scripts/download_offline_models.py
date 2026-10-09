@@ -106,10 +106,17 @@ def download_sherpa_onnx_model():
             local_dir=str(sherpa_dir),
         )
 
-        print("[Sherpa-ONNX] Embedding modeli indiriliyor (csukuangfj/speaker-embedding-models)...")
+        print("[Sherpa-ONNX] Embedding modeli 1 indiriliyor (csukuangfj/speaker-embedding-models: 3dspeaker)...")
         hf_hub_download(
             repo_id="csukuangfj/speaker-embedding-models",
             filename="3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
+            local_dir=str(sherpa_dir),
+        )
+
+        print("[Sherpa-ONNX] ResNet34 Embedding modeli 2 indiriliyor (csukuangfj/speaker-embedding-models: wespeaker ResNet34)...")
+        hf_hub_download(
+            repo_id="csukuangfj/speaker-embedding-models",
+            filename="wespeaker_en_voxceleb_resnet34_LM.onnx",
             local_dir=str(sherpa_dir),
         )
 

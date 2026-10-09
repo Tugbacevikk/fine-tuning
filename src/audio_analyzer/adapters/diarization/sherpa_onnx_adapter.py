@@ -25,13 +25,24 @@ class SherpaOnnxAudioAdapter(IDiarizer):
         self,
         device_config: DeviceConfig | None = None,
         num_speakers: int | None = None,
-        cluster_threshold: float = 0.5,
+        cluster_threshold: float | None = None,
         min_duration_on: float = 0.3,
         min_duration_off: float = 0.5,
     ):
+        from audio_analyzer.config import get_settings
+
+        settings = get_settings()
+        env_th = os.getenv("SHERPA_CLUSTER_THRESHOLD")
+        if cluster_threshold is not None:
+            effective_th = cluster_threshold
+        elif env_th:
+            effective_th = float(env_th)
+        else:
+            effective_th = settings.sherpa_cluster_threshold
+
         self.device_config = device_config or DeviceConfig()
         self.num_speakers = num_speakers
-        self.cluster_threshold = cluster_threshold
+        self.cluster_threshold = effective_th
         self.min_duration_on = min_duration_on
         self.min_duration_off = min_duration_off
         self._pipeline = None
@@ -69,17 +80,22 @@ class SherpaOnnxAudioAdapter(IDiarizer):
                             seg_path = f
                             break
 
-                # 2. Embedding modeli yolunu tespit et
+                # 2. Embedding modeli yolunu tespit et (SHERPA_EMBEDDING_MODEL desteği)
                 emb_path = None
-                for candidate in [
-                    "3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
-                    "wespeaker_en_voxceleb_CAM++_LM.onnx",
-                    "embedding.onnx",
-                ]:
-                    p = base_dir / candidate
-                    if p.exists():
-                        emb_path = p
-                        break
+                env_emb = os.getenv("SHERPA_EMBEDDING_MODEL") or getattr(settings, "sherpa_embedding_model", None)
+                if env_emb and (base_dir / env_emb).exists():
+                    emb_path = base_dir / env_emb
+                else:
+                    for candidate in [
+                        "3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
+                        "wespeaker_en_voxceleb_resnet34_LM.onnx",
+                        "wespeaker_en_voxceleb_CAM++_LM.onnx",
+                        "embedding.onnx",
+                    ]:
+                        p = base_dir / candidate
+                        if p.exists():
+                            emb_path = p
+                            break
 
                 if not emb_path and base_dir.exists():
                     onnx_files = list(base_dir.rglob("*.onnx"))
