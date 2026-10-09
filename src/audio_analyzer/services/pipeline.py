@@ -235,7 +235,10 @@ class AudioAnalysisPipeline:
         # 3. VAD İşleme
         speech_timestamps: list[tuple[float, float]] | None = None
         stt_has_vad = getattr(self.stt_engine, "has_vad_filter", True)
-        if self.vad_processor and (vad_engine == "silero" or not stt_has_vad):
+        enable_vad_filter = (
+            os.getenv("ENABLE_VAD_FILTER", os.getenv("WHISPER_VAD_FILTER", "false")).lower() == "true"
+        )
+        if enable_vad_filter and self.vad_processor and (vad_engine == "silero" or not stt_has_vad):
             t0 = time.monotonic()
             try:
                 speech_timestamps = self.vad_processor.get_speech_timestamps(audio_input)
@@ -294,7 +297,7 @@ class AudioAnalysisPipeline:
                     diarization_segments = []
 
         # 4b. VAD Filtrelemesi
-        if speech_timestamps and words:
+        if enable_vad_filter and speech_timestamps and words:
             words = self._filter_words_with_vad(words, speech_timestamps)
 
         # 6. Overlap Detection
