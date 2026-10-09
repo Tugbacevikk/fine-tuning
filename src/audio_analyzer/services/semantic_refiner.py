@@ -1,6 +1,14 @@
+import json
+import logging
+import os
+import re
+import urllib.request
 import uuid
 
+from audio_analyzer.config import get_settings
 from audio_analyzer.domain.models import TranscriptUtterance
+
+logger = logging.getLogger(__name__)
 
 
 class SemanticRefiner:
@@ -20,10 +28,6 @@ class SemanticRefiner:
         custom_triggers: dict[str, list[str]] | None = None,
         split_on_questions: bool | None = None,
     ):
-        import os
-
-        from audio_analyzer.config import get_settings
-
         settings = get_settings()
         self.domain_mode = domain_mode if domain_mode is not None else settings.domain_mode
         self.use_llm = use_llm if use_llm is not None else settings.use_llm
@@ -68,10 +72,6 @@ class SemanticRefiner:
         Ollama erişilebilir değilse None döner.
         """
         try:
-            import json
-            import os
-            import urllib.request
-
             timeout_sec = float(os.getenv("OLLAMA_TIMEOUT_SEC", "45.0"))
             payload = {
                 "model": self.model_name,
@@ -115,7 +115,6 @@ class SemanticRefiner:
         utterances = cleaned_utterances
 
         # 1. LLM Modu aktifse ve PIPELINE_PROFILE != 'feedback' ise LLM adımını çağır
-        import os
         pipeline_profile = os.getenv("PIPELINE_PROFILE", "full").lower()
         if self.use_llm and pipeline_profile != "feedback":
             utterances = self._refine_with_llm(utterances)
@@ -154,8 +153,6 @@ class SemanticRefiner:
         """
         if not self.split_on_questions:
             return [utt]
-
-        import re
 
         text = utt.text.strip()
         if not text or "?" not in text:
@@ -288,8 +285,6 @@ class SemanticRefiner:
         if not text:
             return text
 
-        import re
-
         # Soru işaretleri ve noktalamalardan önceki boşlukları temizle ("mi ?" -> "mi?")
         text = re.sub(r'\s+([\?\!\,\.\:\;])', r'\1', text)
 
@@ -320,10 +315,6 @@ class SemanticRefiner:
         """
         if not utterances:
             return utterances
-
-        import json
-        import logging
-        import re
 
         logger = logging.getLogger(__name__)
 
@@ -491,8 +482,6 @@ class SemanticRefiner:
         """
         if len(utterances) <= 1:
             return utterances
-
-        import os
 
         max_silence_threshold = float(os.getenv("MAX_SILENCE_THRESHOLD", "1.5"))
         max_clause_gap = float(os.getenv("MAX_CLAUSE_GAP", "1.5"))
