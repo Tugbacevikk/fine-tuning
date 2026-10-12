@@ -33,9 +33,6 @@ def measure_pipeline_stages(
     from audio_analyzer.adapters.audio.audio_converter import AudioConverterProcessor
     from audio_analyzer.adapters.audio.denoiser import DeepFilterDenoiser
     from audio_analyzer.adapters.audio.silero_vad import SileroVADProcessor
-    from audio_analyzer.adapters.diarization.speechbrain_adapter import (
-        SpeechBrainECAPADiarizer,
-    )
     from audio_analyzer.adapters.stt.faster_whisper_adapter import FasterWhisperAdapter
     from audio_analyzer.domain.models import DeviceConfig
     from audio_analyzer.services.fusion_engine import FusionEngine
@@ -43,8 +40,18 @@ def measure_pipeline_stages(
     from audio_analyzer.services.semantic_refiner import SemanticRefiner
 
     device_config = DeviceConfig()
-    stt_engine = FasterWhisperAdapter(model_size=model_size, device_config=device_config)
-    diarizer = SpeechBrainECAPADiarizer(device_config=device_config)
+    stt_engine = FasterWhisperAdapter(model_size=model_size, device_config=device_config, cpu_threads=threads)
+    diar_engine = os.getenv("DIARIZATION_ENGINE", "sherpa_onnx").lower()
+    if diar_engine in ("sherpa_onnx", "sherpa"):
+        from audio_analyzer.adapters.diarization.sherpa_onnx_adapter import (
+            SherpaOnnxAudioAdapter,
+        )
+        diarizer = SherpaOnnxAudioAdapter(device_config=device_config, num_threads=threads)
+    else:
+        from audio_analyzer.adapters.diarization.speechbrain_adapter import (
+            SpeechBrainECAPADiarizer,
+        )
+        diarizer = SpeechBrainECAPADiarizer(device_config=device_config)
     audio_processor = AudioConverterProcessor()
     denoiser = DeepFilterDenoiser(enabled=True)
     vad_processor = SileroVADProcessor()

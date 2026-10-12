@@ -19,10 +19,12 @@ class FasterWhisperAdapter(ISTTEngine):
         model_size: str = "small",
         device_config: DeviceConfig | None = None,
         initial_prompt: str | None = None,
+        cpu_threads: int | None = None,
     ):
         self.model_size = model_size
         self.device_config = device_config or DeviceConfig()
         self.initial_prompt = initial_prompt
+        self.cpu_threads = cpu_threads
         self._model = None
         self._batched_model = None
 
@@ -31,14 +33,15 @@ class FasterWhisperAdapter(ISTTEngine):
         if self._model is None:
             try:
                 from faster_whisper import WhisperModel
+                from audio_analyzer.config import get_settings
 
-                cpu_threads = setup_cpu_thread_budget()
+                threads = self.cpu_threads if self.cpu_threads is not None else get_settings().worker_cpu_threads
                 self._model = WhisperModel(
                     self.model_size,
                     device=self.device_config.device,
                     compute_type=self.device_config.compute_type,
                     device_index=self.device_config.device_index,
-                    cpu_threads=cpu_threads,
+                    cpu_threads=threads,
                 )
 
                 try:
@@ -74,26 +77,32 @@ class FasterWhisperAdapter(ISTTEngine):
         hotwords_raw = os.getenv("WHISPER_HOTWORDS", "").strip() or settings.whisper_hotwords
         hotwords_val = hotwords_raw if hotwords_raw else None
 
-        if self._batched_model is not None and self.device_config.device == "cuda":
-            segments, info = self._batched_model.transcribe(
-                audio_path,
-                batch_size=batch_size,
-                language=language,
-                initial_prompt=prompt_str,
-                hotwords=hotwords_val,
-                word_timestamps=True,
-                beam_size=beam_size,
-                condition_on_previous_text=False,
-                temperature=0.0,
-                repetition_penalty=1.2,
-                no_repeat_ngram_size=3,
-                no_speech_threshold=0.6,
-                compression_ratio_threshold=2.4,
-                log_prob_threshold=None,
-                vad_filter=use_vad_filter,
-                vad_parameters=vad_params if use_vad_filter else None,
-            )
-        else:
+        use_batched = self._batched_model is not None and use_vad_filter
+        if use_batched:
+            try:
+                segments, info = self._batched_model.transcribe(
+                    audio_path,
+                    batch_size=batch_size,
+                    language=language,
+                    initial_prompt=prompt_str,
+                    hotwords=hotwords_val,
+                    word_timestamps=True,
+                    beam_size=beam_size,
+                    condition_on_previous_text=False,
+                    temperature=0.0,
+                    repetition_penalty=1.2,
+                    no_repeat_ngram_size=3,
+                    no_speech_threshold=0.6,
+                    compression_ratio_threshold=2.4,
+                    log_prob_threshold=None,
+                    vad_filter=True,
+                    vad_parameters=vad_params if use_vad_filter else None,
+                )
+            except Exception as batch_err:
+                logger.warning("BatchedInference başarısız (%s), standart modele dönülüyor.", batch_err)
+                use_batched = False
+
+        if not use_batched:
             segments, info = self._model.transcribe(
                 audio_path,
                 language=language,

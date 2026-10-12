@@ -1,0 +1,61 @@
+{
+  "audio_duration_sec": 35.0,
+  "batched_vs_standard": {
+    "standard_sec": 2.31,
+    "standard_rtf": 0.066,
+    "batched_sec": 2.58,
+    "batched_rtf": 0.074,
+    "difference_sec": 0.26
+  },
+  "sequential_vs_parallel": {
+    "sequential_sec": 8.02,
+    "sequential_rtf": 0.229,
+    "parallel_sec": 9.06,
+    "parallel_rtf": 0.259,
+    "winner": "sequential"
+  },
+  "beam_search_benchmarks": [
+    {
+      "model": "small",
+      "beam": 1,
+      "time": 5.086422599852085,
+      "rtf": 0.14532635999577387,
+      "sample": "İki seyahar müşteri hizmetleri bilimi. Size nasıl yardımcı olabilirim? Sizce nasıl yardımcı"
+    },
+    {
+      "model": "small",
+      "beam": 2,
+      "time": 5.302344600204378,
+      "rtf": 0.15149556000583939,
+      "sample": "İki seyir müşteri hizmetleri bilimi. Size nasıl yardımcı olabilirim? Sizce nasıl yardımcı"
+    },
+    {
+      "model": "small",
+      "beam": 5,
+      "time": 5.2655463996343315,
+      "rtf": 0.1504441828466952,
+      "sample": "İki seyir müşteri hizmetleri bilimi size nasıl yardımcı olabilirim. Merhaba, ben Elif"
+    },
+    {
+      "model": "medium",
+      "beam": 1,
+      "time": 15.615649399813265,
+      "rtf": 0.4461614114232361,
+      "sample": "... ... Ben Elif Çevik."
+    },
+    {
+      "model": "medium",
+      "beam": 2,
+      "time": 17.721058499999344,
+      "rtf": 0.5063159571428384,
+      "sample": "... ... İlgisayar Müşteri Hizmetleri Birimi Size Nasıl Yardımcı Olabilirim Size Nasıl"
+    },
+    {
+      "model": "medium",
+      "beam": 5,
+      "time": 16.366337299812585,
+      "rtf": 0.4676096371375024,
+      "sample": "İlgisayar müşteri hizmetleri birimi size nasıl yardımcı olabilirim size nasıl yardımcı olabilirim."
+    }
+  ]
+}

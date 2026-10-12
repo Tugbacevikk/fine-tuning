@@ -275,6 +275,11 @@ class AudioAnalysisPipeline:
             stt_threads = max(1, total_worker_threads // 2)
             diar_threads = max(1, total_worker_threads - stt_threads)
 
+            if hasattr(self.stt_engine, "cpu_threads") and self.stt_engine.cpu_threads is None:
+                self.stt_engine.cpu_threads = stt_threads
+            if hasattr(self.diarizer, "num_threads") and self.diarizer.num_threads is None:
+                self.diarizer.num_threads = diar_threads
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 t0_stt = time.monotonic()
                 future_stt = executor.submit(self.stt_engine.transcribe, audio_input)

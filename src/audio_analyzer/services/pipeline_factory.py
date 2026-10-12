@@ -28,6 +28,15 @@ def _build_pipeline() -> AudioAnalysisPipeline:
     # Ortam değişkenlerinden blueprint parametrelerini oku
     whisper_model_size = settings.whisper_model_size
     max_silence_threshold = settings.max_silence_threshold
+    # Thread bütçesi hesaplama (sıralı modda tüm thread'ler, paralel modda paylaştırılmış thread'ler)
+    run_sequentially = settings.run_pipeline_sequentially
+    total_threads = settings.worker_cpu_threads
+    if run_sequentially:
+        stt_threads = total_threads
+        diar_threads = total_threads
+    else:
+        stt_threads = max(1, total_threads // 2)
+        diar_threads = max(1, total_threads - stt_threads)
 
     # 1. STT Engine (FasterWhisper)
     try:
@@ -36,7 +45,9 @@ def _build_pipeline() -> AudioAnalysisPipeline:
         )
 
         stt_engine = FasterWhisperAdapter(
-            model_size=whisper_model_size, device_config=device_config
+            model_size=whisper_model_size,
+            device_config=device_config,
+            cpu_threads=stt_threads,
         )
     except Exception as e:
         raise RuntimeError(
@@ -68,6 +79,7 @@ def _build_pipeline() -> AudioAnalysisPipeline:
             device_config=device_config,
             num_speakers=settings.target_num_speakers,
             cluster_threshold=settings.sherpa_cluster_threshold,
+            num_threads=diar_threads,
         )
     elif diar_engine_name in ("community1", "pyannote"):
         primary_diarizer = community1_diarizer

@@ -28,6 +28,7 @@ class SherpaOnnxAudioAdapter(IDiarizer):
         cluster_threshold: float | None = None,
         min_duration_on: float | None = None,
         min_duration_off: float = 0.5,
+        num_threads: int | None = None,
     ):
         from audio_analyzer.config import get_settings
 
@@ -50,6 +51,7 @@ class SherpaOnnxAudioAdapter(IDiarizer):
         self.cluster_threshold = effective_th
         self.min_duration_on = effective_min_dur
         self.min_duration_off = min_duration_off
+        self.num_threads = num_threads
         self._pipeline = None
         self._config = None
         self._initialized = False
@@ -119,7 +121,7 @@ class SherpaOnnxAudioAdapter(IDiarizer):
                     self._pipeline = None
                     return
 
-                threads = setup_cpu_thread_budget()
+                threads = self.num_threads if self.num_threads is not None else settings.worker_cpu_threads
                 logger.info(
                     "Sherpa-ONNX konuşmacı motoru yükleniyor (Seg: %s, Emb: %s, Threads: %d, Threshold: %.2f)...",
                     seg_path.name,
