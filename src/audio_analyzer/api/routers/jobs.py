@@ -133,6 +133,8 @@ async def upload_and_analyze_audio(
     external_id: str | None = Form(None),
     num_speakers: int | None = Form(None, ge=1, le=10, description="Beklenen konuşmacı sayısı (1-10). 1 verilirse diarization baypas edilir."),
     speakers: int | None = Form(None, ge=1, le=10, description="Geriye dönük uyumluluk takma adı."),
+    domain_mode: str | None = Form(None, description="Geriye dönük uyumluluk (kullanımdan kaldırıldı, yok sayılır)."),
+    custom_triggers: str | None = Form(None, description="Geriye dönük uyumluluk (kullanımdan kaldırıldı, yok sayılır)."),
     repository: ITranscriptRepository = Depends(get_repository),
     _api_key: str | None = Depends(verify_api_key),
 ):
@@ -142,6 +144,11 @@ async def upload_and_analyze_audio(
     Redis tabanlı Dağıtık Rate-limiting ve external_id İdempotency uygulanır.
     'num_speakers=1' gönderilirse diarization bypass edilerek analiz süresi düşürülür.
     """
+    if domain_mode is not None:
+        logger.warning("Eski istemci parametresi 'domain_mode' (%s) tespit edildi ve yok sayıldı.", domain_mode)
+    if custom_triggers is not None:
+        logger.warning("Eski istemci parametresi 'custom_triggers' tespit edildi ve yok sayıldı.")
+
     target_speakers = num_speakers if num_speakers is not None else speakers
 
     await rate_limiter.check_rate_limit(request)

@@ -125,11 +125,7 @@ def measure_pipeline_stages(
     # 7. Refine
     t0 = time.perf_counter()
     raw_utterances = fusion_engine.align(words, diar_segments)
-    domain_mode = os.getenv("DOMAIN_MODE")
-    if profile == "feedback" and not domain_mode:
-        final_utterances = raw_utterances
-    else:
-        final_utterances = semantic_refiner.refine(raw_utterances)
+    final_utterances = semantic_refiner.refine(raw_utterances)
     t_refine = time.perf_counter() - t0
 
     t_total = t_decode + t_denoise + t_vad + t_stt + t_diarize + t_refine

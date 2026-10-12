@@ -49,7 +49,8 @@ def test_api_root_endpoint(client):
 @pytest.mark.unit
 def test_api_upload_with_optional_num_speakers(client, monkeypatch):
     """num_speakers parametresinin opsiyonel olarak iletilebildiğini doğrular."""
-    monkeypatch.setenv("USE_REDIS_QUEUE", "false")
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr("audio_analyzer.api.routers.jobs.run_pipeline_background", AsyncMock())
     valid_wav = make_valid_wav_bytes()
     
     # 1. num_speakers ile istek (2 kişi)
@@ -175,4 +176,21 @@ def test_health_check_endpoint(client):
     data = res.json()
     assert data["status"] == "HEALTHY"
     assert data["database"] == "OK"
+
+
+@pytest.mark.unit
+def test_api_upload_accepts_and_ignores_deprecated_domain_params(client, monkeypatch):
+    """Eski istemcilerin gönderdiği domain_mode veya custom_triggers parametrelerinin hata vermediğini doğrular."""
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr("audio_analyzer.api.routers.jobs.run_pipeline_background", AsyncMock())
+    valid_wav = make_valid_wav_bytes()
+    files = {"file": ("test_legacy.wav", valid_wav, "audio/wav")}
+    res = client.post(
+        "/api/v1/analyze",
+        files=files,
+        data={"domain_mode": "call_center", "custom_triggers": '{"agent_triggers": ["alo"]}'},
+    )
+    assert res.status_code == 202
+    assert "job_id" in res.json()
+
 

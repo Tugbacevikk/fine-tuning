@@ -228,7 +228,6 @@ class AudioAnalysisPipeline:
         settings = get_settings()
         profile = settings.pipeline_profile
         min_diarize_sec = settings.pipeline_min_diarize_sec
-        domain_mode = settings.domain_mode
         vad_engine = settings.vad_engine
         run_sequentially = settings.run_pipeline_sequentially
 

@@ -29,39 +29,16 @@ class SemanticRefiner:
         split_on_questions: bool | None = None,
     ):
         settings = get_settings()
-        self.domain_mode = domain_mode if domain_mode is not None else settings.domain_mode
         self.use_llm = use_llm if use_llm is not None else settings.use_llm
         self.ollama_url = ollama_url or settings.ollama_url
         self.model_name = model_name or settings.ollama_model
+
+        if domain_mode is not None:
+            logger.warning("domain_mode parametresi ('%s') kullanımdan kaldırılmıştır ve yok sayılmaktadır.", domain_mode)
+        if custom_triggers:
+            logger.warning("custom_triggers parametresi kullanımdan kaldırılmıştır ve yok sayılmaktadır.")
         if split_on_questions is not None:
             logger.warning("split_on_questions parametresi kullanımdan kaldırılmıştır ve yok sayılmaktadır.")
-
-        # Varsayılan genel amaçlı modda alan tetikleyicileri boştur (domain-agnostic).
-        self.agent_triggers: list[str] = []
-        self.customer_triggers: list[str] = []
-
-        # Yalnızca çağrı merkezi veya özel bir alan seçildiğinde kuralları yükle
-        if self.domain_mode == "call_center":
-            self.agent_triggers = [
-                "buyurun",
-                "müşteri hizmetleri",
-                "nasıl yardımcı olabilirim",
-                "anladım hanımefendi",
-                "anladım beyefendi",
-                "anladım efendim",
-                "şikayetinizi not aldım",
-                "size geri dönüş yapacağız",
-            ]
-            self.customer_triggers = [
-                "merhaba ben",
-                "şikayetim var",
-                "sorunlar yaşıyorum",
-                "iade edilmesini talep ediyorum",
-            ]
-
-        if custom_triggers:
-            self.agent_triggers.extend(custom_triggers.get("agent_triggers", []))
-            self.customer_triggers.extend(custom_triggers.get("customer_triggers", []))
 
     def _query_ollama_llm(self, prompt: str) -> str | None:
         """
@@ -116,23 +93,10 @@ class SemanticRefiner:
         if self.use_llm and pipeline_profile != "feedback":
             utterances = self._refine_with_llm(utterances)
 
-        # 2. Alan odaklı (domain_mode) kural tetikleyicileri tanımlıysa bölme kurallarını uygula
-        refined: list[TranscriptUtterance] = []
-        for utt in utterances:
-            if self.agent_triggers or self.customer_triggers:
-                split_result = self._split_if_role_transition(utt)
-            else:
-                split_result = [utt]
+        # 2. Sandviç ve tekil mikro parazit konuşmacıları düzelt
+        smoothed = self._smooth_orphan_and_sandwich_speakers(utterances)
 
-            refined.extend(split_result)
-
-        # 3. Yalnızca çağrı merkezi (call_center) modunda açılış selamlamasını kitle (Role Anchoring)
-        if self.domain_mode == "call_center":
-            anchored_utterances = self._lock_opening_greetings(refined)
-        else:
-            anchored_utterances = refined
-
-        smoothed = self._smooth_orphan_and_sandwich_speakers(anchored_utterances)
+        # 3. Aynı konuşmacının kısa aralıklı parçalarını birleştir
         return self._normalize_short_gaps(smoothed)
 
     def _clean_repetitive_text(self, text: str) -> str:
@@ -289,94 +253,7 @@ class SemanticRefiner:
             logger.warning("Ollama LLM yanıtı ayrıştırılamadı (%s). Orijinal döküm korunuyor.", err)
             return utterances
 
-    def _split_if_role_transition(self, utt: TranscriptUtterance) -> list[TranscriptUtterance]:
-        text = utt.text.strip()
-        text_lower = text.lower()
 
-        all_triggers = self.agent_triggers + self.customer_triggers
-        found_trigger = None
-        split_idx = -1
-
-        for trg in all_triggers:
-            idx = text_lower.find(trg)
-            if idx >= 10:
-                split_idx = idx
-                found_trigger = trg
-                break
-
-        if split_idx > 0 and found_trigger:
-            part1 = text[:split_idx].strip()
-            part2 = text[split_idx:].strip()
-
-            if part1 and part2:
-                total_len = len(text)
-                ratio = len(part1) / total_len
-                split_time = round(utt.start_time + (utt.end_time - utt.start_time) * ratio, 2)
-
-                utt1 = TranscriptUtterance(
-                    id=uuid.uuid4(),
-                    speaker_id=utt.speaker_id,
-                    start_time=utt.start_time,
-                    end_time=split_time,
-                    text=part1,
-                )
-                other_spk = "SPEAKER_01" if utt.speaker_id == "SPEAKER_00" else "SPEAKER_00"
-                utt2 = TranscriptUtterance(
-                    id=uuid.uuid4(),
-                    speaker_id=other_spk,
-                    start_time=split_time,
-                    end_time=utt.end_time,
-                    text=part2,
-                )
-                return [utt1, utt2]
-
-        return [utt]
-
-    def _lock_opening_greetings(
-        self, utterances: list[TranscriptUtterance]
-    ) -> list[TranscriptUtterance]:
-        """
-        Çağrı merkezi açılış selamlama cümlelerini (ilk 12 saniye içindeki 'buyurun', 'müşteri hizmetleri',
-        'nasıl yardımcı olabilirim' vb.) tek bir temsilci (SPEAKER_00) kartına kilitler ve birleştirir.
-        """
-        if len(utterances) <= 1:
-            return utterances
-
-        greeting_keywords = [
-            "müşteri hizmetleri",
-            "hizmetleri birimi",
-            "hoş geldiniz",
-            "çağrı merkezi",
-            "temsilciniz",
-        ]
-
-        # İlk 12 saniye içindeki selamlama kartlarını tespit et
-        opening_indices = []
-        for idx, u in enumerate(utterances):
-            if u.start_time <= 12.0:
-                txt_lower = u.text.lower()
-                if any(kw in txt_lower for kw in greeting_keywords):
-                    opening_indices.append(idx)
-            else:
-                break
-
-        # Eğer ilk 12 saniyede ardışık selamlama parçaları varsa hepsini SPEAKER_00 olarak birleştir
-        if len(opening_indices) >= 2 and opening_indices == list(range(len(opening_indices))):
-            primary_spk = utterances[0].speaker_id
-            combined_text = " ".join(utterances[i].text.strip() for i in opening_indices)
-            start_t = utterances[0].start_time
-            end_t = utterances[opening_indices[-1]].end_time
-
-            anchored_utt = TranscriptUtterance(
-                id=utterances[0].id,
-                speaker_id=primary_spk,
-                start_time=start_t,
-                end_time=end_t,
-                text=combined_text,
-            )
-            return [anchored_utt] + utterances[len(opening_indices):]
-
-        return utterances
 
     def _normalize_short_gaps(
         self, utterances: list[TranscriptUtterance]

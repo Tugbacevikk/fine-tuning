@@ -106,7 +106,6 @@ class Settings:
     )
 
     # 5. SemanticRefiner & Yerel LLM
-    domain_mode: str | None = field(default_factory=lambda: os.getenv("DOMAIN_MODE"))
     use_llm: bool = field(default_factory=lambda: os.getenv("USE_LLM", "false").lower() == "true")
     ollama_url: str = field(default_factory=lambda: os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate"))
     ollama_model: str = field(default_factory=lambda: os.getenv("OLLAMA_MODEL", "llama3.2"))

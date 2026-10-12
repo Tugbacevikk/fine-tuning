@@ -13,7 +13,7 @@ Yüksek performanslı, modüler, **Clean Architecture / Code-First** prensipleri
   - **Zor Durum Kademesi**: Pyannote Community-1 (`pyannote.audio 4.x`, opsiyonel `DIARIZATION_ESCALATION=unknown_speakers` yükseltme kademesi; indirme için `HF_TOKEN` gerektirir).
   - **Yedek Motorlar**: SpeechBrain ECAPA-TDNN -> Local Spectral Clustering.
 - **SemanticRefiner & Yerel LLM Entegrasyonu**:
-  - Alan Odaklı Kurallar (`domain_mode="call_center"` ile müşteri/temsilci geçiş tespiti ve rol sabitleme).
+  - Sandviç konuşmacı düzeltmesi, tekrar temizliği ve aynı konuşmacının kısa aralıklı parçalarını birleştirme.
   - Opsiyonel yerel Ollama LLM (`llama3.2` / `qwen2.5`) entegrasyonu ile konuşmacı metinlerinin anlamsal iyileştirilmesi.
 - **Fusion Engine**: IoU ve Midpoint çakışma çözümleme algoritması + 1.5s sessizlik eşiği.
 - **Overlap Detection (Deneysel)**: Eşzamanlı konuşma ve çakışma tespiti özet alanı (`supported=False` olarak işaretlenir).
@@ -126,7 +126,7 @@ export WORKER_CPU_THREADS=4
 - **`feedback` Profil:** Kısa ve yüksek hacimli geri bildirim mesajları için optimize edilmiştir.
   - Diarization: Ses < `PIPELINE_MIN_DIARIZE_SEC` (varsayılan 10s) ise atlanır (`SPEAKER_00`).
   - Denoiser: Yalnızca ölçülen SNR < `PIPELINE_MIN_SNR_DB` (varsayılan 15 dB) ise çalışır.
-  - SemanticRefiner: Yalnızca `DOMAIN_MODE` tanımlıysa çalışır.
+  - SemanticRefiner: Tekrar temizliği ve aralık normalizasyonu çalışır (LLM adımı feedback profilinde atlanır).
   - Whisper Beam Size: 1.
 - **`full` Profil (Varsayılan):** Tüm analiz adımlarını eksiksiz çalıştırır. Whisper Beam Size: 5.
 
