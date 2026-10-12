@@ -517,6 +517,7 @@ def run_evaluation(
     print(f" Fallback Oranı                     : %{fallback_rate_pct:.1f}")
     print(f" JSON Rapor Dosyası                 : {json_path.absolute()}")
     print("=" * 90 + "\n")
+    return benchmark_data
 
 
 if __name__ == "__main__":

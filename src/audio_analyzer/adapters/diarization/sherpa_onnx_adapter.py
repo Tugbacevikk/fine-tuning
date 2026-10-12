@@ -26,7 +26,7 @@ class SherpaOnnxAudioAdapter(IDiarizer):
         device_config: DeviceConfig | None = None,
         num_speakers: int | None = None,
         cluster_threshold: float | None = None,
-        min_duration_on: float = 0.3,
+        min_duration_on: float | None = None,
         min_duration_off: float = 0.5,
     ):
         from audio_analyzer.config import get_settings
@@ -40,10 +40,15 @@ class SherpaOnnxAudioAdapter(IDiarizer):
         else:
             effective_th = settings.sherpa_cluster_threshold
 
+        if min_duration_on is not None:
+            effective_min_dur = min_duration_on
+        else:
+            effective_min_dur = settings.sherpa_min_duration_on if settings.enable_min_duration_on else 0.0
+
         self.device_config = device_config or DeviceConfig()
         self.num_speakers = num_speakers
         self.cluster_threshold = effective_th
-        self.min_duration_on = min_duration_on
+        self.min_duration_on = effective_min_dur
         self.min_duration_off = min_duration_off
         self._pipeline = None
         self._config = None
@@ -211,9 +216,7 @@ class SherpaOnnxAudioAdapter(IDiarizer):
         filtered_raw = []
         is_num_speakers_given = num_speakers_requested is not None and num_speakers_requested > 0
 
-        from audio_analyzer.config import get_settings
-        settings = get_settings()
-        filter_enabled = settings.enable_min_duration_on and self.min_duration_on > 0.0
+        filter_enabled = self.min_duration_on > 0.0
 
         for spk, seg_list in spk_groups.items():
             if filter_enabled:

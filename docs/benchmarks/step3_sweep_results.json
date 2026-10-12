@@ -1,0 +1,186 @@
+{
+  "threshold_sweep_3dspeaker": [
+    {
+      "threshold": 0.4,
+      "der": 69.3,
+      "missed": 56.43,
+      "fa": 0.08,
+      "conf": 12.8,
+      "match_rate": 25.0,
+      "time_p50": 2.455
+    },
+    {
+      "threshold": 0.5,
+      "der": 67.71,
+      "missed": 56.21,
+      "fa": 0.08,
+      "conf": 11.42,
+      "match_rate": 30.0,
+      "time_p50": 2.412
+    },
+    {
+      "threshold": 0.6,
+      "der": 65.7,
+      "missed": 56.21,
+      "fa": 0.08,
+      "conf": 9.41,
+      "match_rate": 40.0,
+      "time_p50": 2.411
+    },
+    {
+      "threshold": 0.7,
+      "der": 64.6,
+      "missed": 56.2,
+      "fa": 0.08,
+      "conf": 8.32,
+      "match_rate": 35.0,
+      "time_p50": 2.359
+    },
+    {
+      "threshold": 0.75,
+      "der": 64.21,
+      "missed": 56.21,
+      "fa": 0.08,
+      "conf": 7.92,
+      "match_rate": 40.0,
+      "time_p50": 2.353
+    },
+    {
+      "threshold": 0.8,
+      "der": 64.29,
+      "missed": 56.21,
+      "fa": 0.08,
+      "conf": 8.0,
+      "match_rate": 35.0,
+      "time_p50": 2.376
+    }
+  ],
+  "model_sweep": [
+    {
+      "model": "3dspeaker",
+      "model_file": "3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
+      "threshold": 0.6,
+      "der": 65.7,
+      "missed": 56.21,
+      "conf": 9.41,
+      "match_rate": 40.0,
+      "time_p50": 2.34
+    },
+    {
+      "model": "3dspeaker",
+      "model_file": "3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
+      "threshold": 0.7,
+      "der": 64.6,
+      "missed": 56.2,
+      "conf": 8.32,
+      "match_rate": 35.0,
+      "time_p50": 2.327
+    },
+    {
+      "model": "3dspeaker",
+      "model_file": "3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx",
+      "threshold": 0.75,
+      "der": 64.21,
+      "missed": 56.21,
+      "conf": 7.92,
+      "match_rate": 40.0,
+      "time_p50": 2.304
+    },
+    {
+      "model": "wespeaker_resnet34",
+      "model_file": "wespeaker_en_voxceleb_resnet34_LM.onnx",
+      "threshold": 0.6,
+      "der": 63.53,
+      "missed": 56.11,
+      "conf": 6.84,
+      "match_rate": 40.0,
+      "time_p50": 2.062
+    },
+    {
+      "model": "wespeaker_resnet34",
+      "model_file": "wespeaker_en_voxceleb_resnet34_LM.onnx",
+      "threshold": 0.7,
+      "der": 66.14,
+      "missed": 56.64,
+      "conf": 9.45,
+      "match_rate": 20.0,
+      "time_p50": 2.068
+    },
+    {
+      "model": "wespeaker_resnet34",
+      "model_file": "wespeaker_en_voxceleb_resnet34_LM.onnx",
+      "threshold": 0.75,
+      "der": 66.14,
+      "missed": 56.66,
+      "conf": 9.44,
+      "match_rate": 10.0,
+      "time_p50": 2.067
+    },
+    {
+      "model": "wespeaker_cam++",
+      "model_file": "wespeaker_en_voxceleb_CAM++_LM.onnx",
+      "threshold": 0.6,
+      "der": 68.4,
+      "missed": 56.81,
+      "conf": 11.54,
+      "match_rate": 20.0,
+      "time_p50": 1.655
+    },
+    {
+      "model": "wespeaker_cam++",
+      "model_file": "wespeaker_en_voxceleb_CAM++_LM.onnx",
+      "threshold": 0.7,
+      "der": 68.72,
+      "missed": 56.96,
+      "conf": 11.72,
+      "match_rate": 15.0,
+      "time_p50": 1.533
+    },
+    {
+      "model": "wespeaker_cam++",
+      "model_file": "wespeaker_en_voxceleb_CAM++_LM.onnx",
+      "threshold": 0.75,
+      "der": 68.69,
+      "missed": 56.96,
+      "conf": 11.69,
+      "match_rate": 20.0,
+      "time_p50": 1.552
+    }
+  ],
+  "final_validation_test_split": {
+    "best_combo": {
+      "model": "wespeaker_resnet34",
+      "model_file": "wespeaker_en_voxceleb_resnet34_LM.onnx",
+      "threshold": 0.6,
+      "der": 63.53,
+      "missed": 56.11,
+      "conf": 6.84,
+      "match_rate": 40.0,
+      "time_p50": 2.062
+    },
+    "unknown_speakers": {
+      "avg_der_percent": 45.26,
+      "std_der_percent": 21.79,
+      "avg_missed_speech_percent": 35.35,
+      "avg_false_alarm_percent": 0.07,
+      "avg_speaker_confusion_percent": 9.84,
+      "speaker_match_rate_percent": 45.0,
+      "median_time_sec": 2.957,
+      "p95_time_sec": 5.217,
+      "max_rss_mb": 477.6,
+      "fallback_rate_percent": 0.0
+    },
+    "known_speakers": {
+      "avg_der_percent": 45.4,
+      "std_der_percent": 21.62,
+      "avg_missed_speech_percent": 34.46,
+      "avg_false_alarm_percent": 0.09,
+      "avg_speaker_confusion_percent": 10.85,
+      "speaker_match_rate_percent": 85.0,
+      "median_time_sec": 2.966,
+      "p95_time_sec": 5.185,
+      "max_rss_mb": 477.5,
+      "fallback_rate_percent": 0.0
+    }
+  }
+}

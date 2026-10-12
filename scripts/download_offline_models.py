@@ -120,6 +120,13 @@ def download_sherpa_onnx_model():
             local_dir=str(sherpa_dir),
         )
 
+        print("[Sherpa-ONNX] CAM++ Embedding modeli 3 indiriliyor (csukuangfj/speaker-embedding-models: wespeaker CAM++)...")
+        hf_hub_download(
+            repo_id="csukuangfj/speaker-embedding-models",
+            filename="wespeaker_en_voxceleb_CAM++_LM.onnx",
+            local_dir=str(sherpa_dir),
+        )
+
         print("[OK] Sherpa-ONNX çevrimdışı ONNX modelleri başarıyla yüklendi!")
     except Exception as e:
         print(f"[ERROR] Sherpa-ONNX indirme hatası: {e}")
