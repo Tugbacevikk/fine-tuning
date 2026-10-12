@@ -44,8 +44,11 @@ class FusionEngine:
         # 2. Kelimeleri Konuşmacı ve Sessizlik eşiğine göre gruplayarak Utterance blokları oluşturma
         raw_utterances = self._group_words_into_utterances(attributed_words)
 
+        # 2b. Kısa parça bağlama (<1.0s, gap<0.3s, noktalama yok -> önceki konuşmacı)
+        bound_utterances = self._bind_short_unpunctuated_turns(raw_utterances)
+
         # 3. Konuşmacıları ilk görünme (kronolojik ses) sırasına göre SPEAKER_00, SPEAKER_01... olarak sıralama
-        return self._normalize_speaker_ids(raw_utterances)
+        return self._normalize_speaker_ids(bound_utterances)
 
     def _find_best_speaker_for_word(
         self, word: WordSegment, diarization_segments: list[DiarizationSegment]
@@ -158,3 +161,38 @@ class FusionEngine:
             utt.speaker_id = speaker_map[utt.speaker_id]
 
         return utterances
+
+    def _bind_short_unpunctuated_turns(
+        self, utterances: list[TranscriptUtterance]
+    ) -> list[TranscriptUtterance]:
+        """
+        Kısa parça bağlama (Step 3):
+        Süresi 1.0 s'den kısa bir utterance, önceki utterance noktalama ile bitmiyorsa
+        ve aralarındaki boşluk 0.3 s'den kısaysa önceki konuşmacıya bağlanır.
+        Metin değişmez, sadece etiket (speaker_id) güncellenir.
+        """
+        if len(utterances) <= 1:
+            return utterances
+
+        result: list[TranscriptUtterance] = [utterances[0]]
+        for i in range(1, len(utterances)):
+            prev_utt = result[-1]
+            curr_utt = utterances[i]
+
+            dur = curr_utt.end_time - curr_utt.start_time
+            gap = curr_utt.start_time - prev_utt.end_time
+            prev_text = prev_utt.text.strip()
+            prev_ends_with_punct = prev_text.endswith((".", "?", "!", ":", ";", "…", "..."))
+
+            if dur < 1.0 and gap < 0.3 and not prev_ends_with_punct:
+                curr_utt = TranscriptUtterance(
+                    id=curr_utt.id,
+                    speaker_id=prev_utt.speaker_id,
+                    start_time=curr_utt.start_time,
+                    end_time=curr_utt.end_time,
+                    text=curr_utt.text,
+                )
+
+            result.append(curr_utt)
+
+        return result
