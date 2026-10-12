@@ -280,33 +280,14 @@ class SemanticRefiner:
 
     def _normalize_turkish_text(self, text: str) -> str:
         """
-        Türkçe imla ve birleşik kelime hatalarını (örn: "mi ?" -> "mi?") otomatik düzeltir.
+        Noktalama öncesi boşlukları temizler (örn: "mi ?" -> "mi?").
+        Kelimeye veya güne bağlı elle yazılmış kurallar içermez.
         """
         if not text:
             return text
 
         # Soru işaretleri ve noktalamalardan önceki boşlukları temizle ("mi ?" -> "mi?")
-        text = re.sub(r'\s+([\?\!\,\.\:\;])', r'\1', text)
-
-        # Birleşik gün isimlerini ayır
-        days = ["pazartesi", "salı", "çarşamba", "perşembe", "cuma", "cumartesi", "pazar"]
-        for day in days:
-            text = re.sub(rf'\b({day})(günü|gün|sabahı|akşamı)\b', r'\1 \2', text, flags=re.IGNORECASE)
-
-        # Common phonetic STT typo corrections (Zero latency post-processing)
-        replacements = [
-            (r'\bbeyni\b(?=\s+(bırak|bırakır|yap|buton|atar|ver))', 'beğeni'),
-            (r'\bbir\s+beyni\b', 'bir beğeni'),
-            (r'\bArkadaşıar\b', 'Arkadaşlar'),
-            (r'\barkadaşıar\b', 'arkadaşlar'),
-            (r'\btüpçeyi\b', 'Türkçeyi'),
-            (r'\btüpçe\b', 'Türkçe'),
-            (r'\bakıcık\b', 'Akıcı'),
-        ]
-        for pattern, repl in replacements:
-            text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
-
-        return text
+        return re.sub(r'\s+([\?\!\,\.\:\;])', r'\1', text)
 
     def _refine_with_llm(self, utterances: list[TranscriptUtterance]) -> list[TranscriptUtterance]:
         """
