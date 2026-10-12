@@ -35,6 +35,11 @@ storage/models/*
 !tests/fixtures/diarization_eval/*.rttm
 tests/fixtures/diarization_eval/large/
 scratch/
+analiz_sonuclari/
+**/analiz_sonuclari/
+recordings/
+kayitlar/
+*Yeni klasör*
 
 # Python & Caches
 __pycache__/

@@ -119,7 +119,11 @@ def run_batch_analysis(
             continue
 
         unique_speakers = sorted(list({u.speaker_id for u in utterances}))
-        total_audio_duration = utterances[-1].end_time if utterances else 0.0
+        try:
+            import soundfile as sf
+            total_audio_duration = float(sf.info(str(audio_path)).duration)
+        except Exception:
+            total_audio_duration = utterances[-1].end_time if utterances else 0.0
         rtf = elapsed / total_audio_duration if total_audio_duration > 0 else 0.0
 
         print(f" -> Tamamlandı: {elapsed:.2f} sn | RTF: {rtf:.2f}x | Konuşmacılar ({len(unique_speakers)}): {unique_speakers} | Dil: {detected_lang}")
