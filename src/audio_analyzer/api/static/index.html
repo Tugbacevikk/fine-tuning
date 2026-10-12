@@ -859,6 +859,11 @@
             const statusElem = document.getElementById('audioClipStatus');
             if (!player) return;
 
+            if (!player.src) {
+                showToast('Bu görevin ses dosyası mevcut değil (saklama süresi dolmuş olabilir).', 'warning');
+                return;
+            }
+
             // 1. Önce oynatıcıyı durdur ve zaman aralığını ayarla
             player.pause();
 
@@ -922,10 +927,13 @@
             document.getElementById('metaBlockCount').textContent = job.utterances.length + ' Adet';
 
             const player = document.getElementById('mainAudioPlayer');
+            const statusElem = document.getElementById('audioClipStatus');
             if (player) {
                 if (player.src && player.src.startsWith('blob:')) {
                     URL.revokeObjectURL(player.src);
                 }
+                player.removeAttribute('src');
+                if (statusElem) statusElem.textContent = '';
                 try {
                     const audioRes = await apiFetch(`/api/v1/jobs/${job.job_id}/audio`);
                     if (audioRes.ok) {
@@ -933,7 +941,10 @@
                         player.src = URL.createObjectURL(blob);
                         player.load();
                     } else {
-                        showToast(`Ses dosyası yüklenemedi (HTTP ${audioRes.status})`, 'error');
+                        if (statusElem) {
+                            statusElem.innerHTML = `<span style="color: #f87171;">⚠️ Ses dosyası bulunamadı (saklama süresi dolmuş veya dosya taşınmış).</span>`;
+                        }
+                        showToast(`Ses dosyası yüklenemedi (HTTP ${audioRes.status})`, 'warning');
                     }
                 } catch (err) {
                     console.error('Audio fetch hatası:', err);

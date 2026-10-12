@@ -343,6 +343,34 @@ async def get_job_audio_file(
     # 1. Önce diski/yerel yolu dene (HTML5 <audio> Range requests & partial content streaming için FileResponse)
     try:
         local_path = storage.get_path(record.storage_uri)
+        if not (local_path and os.path.exists(local_path)):
+            # Fallback: Orijinal dosya adı ile arama (storage_dir, 'Yeni klasör', tests vb.)
+            candidate_dirs = [
+                Path(local_path).parent if local_path else None,
+                Path(get_settings().storage_dir) if hasattr(get_settings(), "storage_dir") else None,
+                Path("storage/raw"),
+                Path("storage"),
+                Path("Yeni klasör"),
+                Path("tests/fixtures"),
+            ]
+            for c_dir in candidate_dirs:
+                if c_dir and c_dir.exists() and record.file_name:
+                    cand = (c_dir / record.file_name).resolve()
+                    if cand.exists() and cand.is_file():
+                        local_path = str(cand)
+                        # Orijinal hedefe kopyala (ileriki istekler için hazır olsun)
+                        if hasattr(storage, "get_path"):
+                            try:
+                                orig_target = Path(storage.get_path(record.storage_uri))
+                                if not orig_target.exists():
+                                    orig_target.parent.mkdir(parents=True, exist_ok=True)
+                                    import shutil
+                                    shutil.copy2(cand, orig_target)
+                                    local_path = str(orig_target)
+                            except Exception:
+                                pass
+                        break
+
         if local_path and os.path.exists(local_path):
             media_type, _ = mimetypes.guess_type(local_path)
             if not media_type:
@@ -351,7 +379,7 @@ async def get_job_audio_file(
     except Exception as e:
         logger.warning("Storage get_path note: %s", e)
 
-    # 2. Disk yolu bulunamazsa RAM bellek akışı olarak dön (RAM storage fallback)
+    # 2. Disk yolu bulunamazsa bellek akışı veya depolama adaptöründen doğrudan oku
     if hasattr(storage, "get_bytes"):
         try:
             audio_bytes = storage.get_bytes(record.storage_uri)
@@ -361,9 +389,12 @@ async def get_job_audio_file(
                     media_type = "audio/wav"
                 return Response(content=audio_bytes, media_type=media_type)
         except Exception as e:
-            logger.warning("RAM storage get_bytes note: %s", e)
+            logger.info("Storage get_bytes note: %s", e)
 
-    raise HTTPException(status_code=404, detail="Ses dosyası depolamada veya diskte bulunamadı.")
+    raise HTTPException(
+        status_code=404,
+        detail=f"'{record.file_name}' ses dosyası depolamada bulunamadı (saklama süresi/retention dolmuş veya silinmiş olabilir)."
+    )
 
 
 
