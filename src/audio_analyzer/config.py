@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+load_dotenv()
 
 
 def _opt_int(name: str) -> int | None:
