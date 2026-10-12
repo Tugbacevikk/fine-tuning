@@ -300,6 +300,12 @@ class AudioAnalysisPipeline:
         if enable_vad_filter and speech_timestamps and words:
             words = self._filter_words_with_vad(words, speech_timestamps)
 
+        # 5b. Küçük Konuşmacıları Birleştirme (Diarization Post-Processing)
+        if diarization_segments:
+            from audio_analyzer.services.speaker_merger import SpeakerClusterMerger
+            merger = SpeakerClusterMerger()
+            diarization_segments = merger.merge(diarization_segments, num_speakers=num_speakers)
+
         # 6. Overlap Detection
         t0 = time.monotonic()
         total_duration = audio_duration
