@@ -323,60 +323,66 @@ class SemanticRefiner:
         if len(utterances) <= 1:
             return utterances
 
-        result: list[TranscriptUtterance] = []
-        for u in utterances:
-            result.append(
-                TranscriptUtterance(
-                    id=u.id,
-                    speaker_id=u.speaker_id,
-                    start_time=u.start_time,
-                    end_time=u.end_time,
-                    text=u.text,
-                )
+        from audio_analyzer.config import get_settings
+        settings = get_settings()
+
+        result: list[TranscriptUtterance] = [
+            TranscriptUtterance(
+                id=u.id,
+                speaker_id=u.speaker_id,
+                start_time=u.start_time,
+                end_time=u.end_time,
+                text=u.text,
             )
+            for u in utterances
+        ]
 
         # 1. Sandviç Geçiş Düzeltmesi (A -> B -> A)
-        for i in range(1, len(result) - 1):
-            prev_utt = result[i - 1]
-            curr_utt = result[i]
-            next_utt = result[i + 1]
+        if settings.enable_sandwich_rule:
+            max_dur = settings.sandwich_max_duration_sec
+            for i in range(1, len(utterances) - 1):
+                # Kararları zincirleme etki yapmaması için ORİJİNAL utterances listesine göre ver:
+                orig_prev = utterances[i - 1]
+                orig_curr = utterances[i]
+                orig_next = utterances[i + 1]
 
-            if prev_utt.speaker_id == next_utt.speaker_id and curr_utt.speaker_id != prev_utt.speaker_id:
-                duration = curr_utt.end_time - curr_utt.start_time
-                txt_words = curr_utt.text.strip().split()
-                if duration < 0.8 or len(txt_words) <= 3:
-                    result[i] = TranscriptUtterance(
-                        id=curr_utt.id,
-                        speaker_id=prev_utt.speaker_id,
-                        start_time=curr_utt.start_time,
-                        end_time=curr_utt.end_time,
-                        text=curr_utt.text,
-                    )
+                if orig_prev.speaker_id == orig_next.speaker_id and orig_curr.speaker_id != orig_prev.speaker_id:
+                    duration = orig_curr.end_time - orig_curr.start_time
+                    # Kelime sayısı koşulu (len(txt_words) <= 3) kaldırıldı; sadece süreye bakılıyor:
+                    if duration < max_dur:
+                        result[i] = TranscriptUtterance(
+                            id=orig_curr.id,
+                            speaker_id=orig_prev.speaker_id,
+                            start_time=orig_curr.start_time,
+                            end_time=orig_curr.end_time,
+                            text=orig_curr.text,
+                        )
 
         # 2. Mikro Parazit / Punctuation-only Segment Yumuşatma
-        for i in range(len(result)):
-            curr_utt = result[i]
-            duration = curr_utt.end_time - curr_utt.start_time
-            clean_txt = curr_utt.text.strip()
+        if settings.enable_micro_utterance_rule:
+            for i in range(len(utterances)):
+                orig_curr = utterances[i]
+                duration = orig_curr.end_time - orig_curr.start_time
+                clean_txt = orig_curr.text.strip()
 
-            is_pure_punct = clean_txt in ("?", ".", "!", "...", "") or len(clean_txt) <= 2
-            is_ultra_short = duration < 0.35
+                is_pure_punct = clean_txt in ("?", ".", "!", "...", "") or len(clean_txt) <= 2
+                is_ultra_short = duration < 0.35
 
-            if is_pure_punct or is_ultra_short:
-                target_spk = None
-                if i > 0:
-                    target_spk = result[i - 1].speaker_id
-                elif i + 1 < len(result):
-                    target_spk = result[i + 1].speaker_id
+                if is_pure_punct or is_ultra_short:
+                    target_spk = None
+                    if i > 0:
+                        target_spk = utterances[i - 1].speaker_id
+                    elif i + 1 < len(utterances):
+                        target_spk = utterances[i + 1].speaker_id
 
-                if target_spk and target_spk != curr_utt.speaker_id:
-                    result[i] = TranscriptUtterance(
-                        id=curr_utt.id,
-                        speaker_id=target_spk,
-                        start_time=curr_utt.start_time,
-                        end_time=curr_utt.end_time,
-                        text=curr_utt.text,
-                    )
+                    if target_spk and target_spk != orig_curr.speaker_id:
+                        result[i] = TranscriptUtterance(
+                            id=orig_curr.id,
+                            speaker_id=target_spk,
+                            start_time=orig_curr.start_time,
+                            end_time=orig_curr.end_time,
+                            text=orig_curr.text,
+                        )
 
         return result
 

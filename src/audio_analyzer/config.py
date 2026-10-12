@@ -106,6 +106,38 @@ class Settings:
         default_factory=lambda: os.getenv("RUN_PIPELINE_SEQUENTIALLY", "true").lower() == "true"
     )
 
+    # Diarization Son-İşleme ve Kurallar (Post-Processing Toggles)
+    enable_min_duration_on: bool = field(
+        default_factory=lambda: os.getenv("ENABLE_MIN_DURATION_ON", "false").lower() == "true"
+    )
+    sherpa_min_duration_on: float = field(
+        default_factory=lambda: float(os.getenv("SHERPA_MIN_DURATION_ON", "0.3"))
+    )
+    enable_speaker_merger: bool = field(
+        default_factory=lambda: os.getenv("ENABLE_SPEAKER_MERGER", "true").lower() == "true"
+    )
+    min_speaker_sec: float = field(
+        default_factory=lambda: float(os.getenv("MIN_SPEAKER_SEC", "3.0"))
+    )
+    min_speaker_ratio: float = field(
+        default_factory=lambda: float(os.getenv("MIN_SPEAKER_RATIO", "0.05"))
+    )
+    enable_smooth_words: bool = field(
+        default_factory=lambda: os.getenv("ENABLE_SMOOTH_WORDS", "false").lower() == "true"
+    )
+    bind_short_turns: bool = field(
+        default_factory=lambda: os.getenv("BIND_SHORT_TURNS", "true").lower() == "true"
+    )
+    enable_sandwich_rule: bool = field(
+        default_factory=lambda: os.getenv("ENABLE_SANDWICH_RULE", "true").lower() == "true"
+    )
+    sandwich_max_duration_sec: float = field(
+        default_factory=lambda: float(os.getenv("SANDWICH_MAX_DURATION_SEC", "0.8"))
+    )
+    enable_micro_utterance_rule: bool = field(
+        default_factory=lambda: os.getenv("ENABLE_MICRO_UTTERANCE_RULE", "true").lower() == "true"
+    )
+
     # 5. SemanticRefiner & Yerel LLM
     use_llm: bool = field(default_factory=lambda: os.getenv("USE_LLM", "false").lower() == "true")
     ollama_url: str = field(default_factory=lambda: os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate"))

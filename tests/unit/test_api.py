@@ -70,6 +70,7 @@ def test_api_upload_with_optional_num_speakers(client, monkeypatch):
 def test_api_upload_and_status_flow(client, tmp_path, monkeypatch):
     """POST /api/v1/analyze ve GET /api/v1/jobs/{id} REST akışını doğrular."""
     monkeypatch.setenv("USE_REDIS_QUEUE", "false")
+    monkeypatch.setenv("USE_REDIS_STREAM", "false")
     monkeypatch.setenv("USE_CELERY", "false")
     # 1. POST /api/v1/analyze
     valid_wav = make_valid_wav_bytes()

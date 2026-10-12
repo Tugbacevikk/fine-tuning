@@ -27,18 +27,21 @@ class SpeakerClusterMerger:
         min_speaker_sec: float | None = None,
         min_speaker_ratio: float | None = None,
     ):
+        from audio_analyzer.config import get_settings
+        settings = get_settings()
+
         env_sec = os.getenv("MIN_SPEAKER_SEC")
         env_ratio = os.getenv("MIN_SPEAKER_RATIO")
 
         self.min_speaker_sec = (
             min_speaker_sec
             if min_speaker_sec is not None
-            else float(env_sec) if env_sec is not None else 3.0
+            else float(env_sec) if env_sec is not None else settings.min_speaker_sec
         )
         self.min_speaker_ratio = (
             min_speaker_ratio
             if min_speaker_ratio is not None
-            else float(env_ratio) if env_ratio is not None else 0.05
+            else float(env_ratio) if env_ratio is not None else settings.min_speaker_ratio
         )
 
     def merge(
@@ -49,6 +52,10 @@ class SpeakerClusterMerger:
     ) -> list[DiarizationSegment]:
         if not segments:
             return []
+
+        from audio_analyzer.config import get_settings
+        if not get_settings().enable_speaker_merger:
+            return segments
 
         # 1. Konuşmacı sürelerini topla
         spk_durations: dict[str, float] = {}

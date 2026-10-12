@@ -17,18 +17,26 @@ class FusionEngine:
         self,
         max_silence_threshold: float = 1.5,
         bind_short_turns: bool | None = None,
+        enable_smooth_words: bool | None = None,
     ):
         """
         :param max_silence_threshold: Aynı konuşmacı bu süreden (saniye) fazla susarsa yeni paragraf başlatır.
         :param bind_short_turns: Süresi <1s, gap <0.3s ve noktalama ile bitmeyen parçaları önceki konuşmacıya bağlama adımı.
+        :param enable_smooth_words: Tek kelimelik konuşmacı sıçramalarını yumuşatma adımı.
         """
-        import os
+        from audio_analyzer.config import get_settings
+        settings = get_settings()
+
         self.max_silence_threshold = max_silence_threshold
         if bind_short_turns is None:
-            env_val = os.getenv("BIND_SHORT_TURNS")
-            self.bind_short_turns = env_val.lower() == "true" if env_val is not None else True
+            self.bind_short_turns = settings.bind_short_turns
         else:
             self.bind_short_turns = bind_short_turns
+
+        if enable_smooth_words is None:
+            self.enable_smooth_words = settings.enable_smooth_words
+        else:
+            self.enable_smooth_words = enable_smooth_words
 
     def align(
         self, words: list[WordSegment], diarization_segments: list[DiarizationSegment]
@@ -50,7 +58,8 @@ class FusionEngine:
             attributed_words.append((word, best_speaker))
 
         # 1b. Gürültü ve anlık sıçramaları önlemek için 1-kelimelik spikeleri yumuşatma (Smoothing Pass)
-        attributed_words = self._smooth_attributed_words(attributed_words)
+        if self.enable_smooth_words:
+            attributed_words = self._smooth_attributed_words(attributed_words)
 
         # 2. Kelimeleri Konuşmacı ve Sessizlik eşiğine göre gruplayarak Utterance blokları oluşturma
         raw_utterances = self._group_words_into_utterances(attributed_words)
@@ -139,14 +148,15 @@ class FusionEngine:
     def _smooth_attributed_words(
         self, attributed_words: list[tuple[WordSegment, str]]
     ) -> list[tuple[WordSegment, str]]:
-        if len(attributed_words) < 3:
+        if not self.enable_smooth_words or len(attributed_words) < 3:
             return attributed_words
 
         smoothed = list(attributed_words)
         for i in range(1, len(attributed_words) - 1):
-            prev_spk = smoothed[i - 1][1]
-            next_spk = smoothed[i + 1][1]
-            curr_spk = smoothed[i][1]
+            # Kararları zincirleme etki yapmaması için orijinal attributed_words listesine göre ver:
+            prev_spk = attributed_words[i - 1][1]
+            next_spk = attributed_words[i + 1][1]
+            curr_spk = attributed_words[i][1]
 
             # Eğer sağındaki ve solundaki konuşmacı aynı ise ancak ortadaki tek kelime farklıysa ortadakini düzelt
             if prev_spk == next_spk and curr_spk != prev_spk:

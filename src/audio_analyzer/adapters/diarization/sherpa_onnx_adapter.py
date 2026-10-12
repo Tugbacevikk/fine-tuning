@@ -211,15 +211,22 @@ class SherpaOnnxAudioAdapter(IDiarizer):
         filtered_raw = []
         is_num_speakers_given = num_speakers_requested is not None and num_speakers_requested > 0
 
+        from audio_analyzer.config import get_settings
+        settings = get_settings()
+        filter_enabled = settings.enable_min_duration_on and self.min_duration_on > 0.0
+
         for spk, seg_list in spk_groups.items():
-            valid_segs = [s for s in seg_list if s.duration >= self.min_duration_on]
-            if not valid_segs:
-                if is_num_speakers_given:
-                    # Konuşmacı kümesi tamamen silinmesin diye en uzun segmenti koru
-                    longest_seg = max(seg_list, key=lambda s: float(s.duration))
-                    filtered_raw.append(longest_seg)
+            if filter_enabled:
+                valid_segs = [s for s in seg_list if s.duration >= self.min_duration_on]
+                if not valid_segs:
+                    if is_num_speakers_given:
+                        # Konuşmacı kümesi tamamen silinmesin diye en uzun segmenti koru
+                        longest_seg = max(seg_list, key=lambda s: float(s.duration))
+                        filtered_raw.append(longest_seg)
+                else:
+                    filtered_raw.extend(valid_segs)
             else:
-                filtered_raw.extend(valid_segs)
+                filtered_raw.extend(seg_list)
 
         # 2. Başlangıç zamanına göre sırala
         filtered_raw.sort(key=lambda s: float(s.start))
