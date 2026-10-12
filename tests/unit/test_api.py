@@ -42,6 +42,27 @@ def test_api_root_endpoint(client):
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     assert "Ses Analizi" in response.text
+    assert "numSpeakersInput" in response.text
+    assert "Kaç kişi konuşuyor" in response.text
+
+
+@pytest.mark.unit
+def test_api_upload_with_optional_num_speakers(client, monkeypatch):
+    """num_speakers parametresinin opsiyonel olarak iletilebildiğini doğrular."""
+    monkeypatch.setenv("USE_REDIS_QUEUE", "false")
+    valid_wav = make_valid_wav_bytes()
+    
+    # 1. num_speakers ile istek (2 kişi)
+    files = {"file": ("test_speakers.wav", valid_wav, "audio/wav")}
+    res = client.post("/api/v1/analyze", files=files, data={"num_speakers": 2})
+    assert res.status_code == 202
+    assert "job_id" in res.json()
+
+    # 2. num_speakers olmadan (otomatik mod) istek
+    files2 = {"file": ("test_auto.wav", valid_wav, "audio/wav")}
+    res2 = client.post("/api/v1/analyze", files=files2)
+    assert res2.status_code == 202
+    assert "job_id" in res2.json()
 
 
 @pytest.mark.unit

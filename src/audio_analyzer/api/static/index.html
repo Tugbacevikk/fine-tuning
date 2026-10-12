@@ -524,6 +524,27 @@
                 <input type="file" id="fileInput" accept="audio/*" onchange="handleFileSelect(event)">
             </div>
 
+            <!-- Opsiyonel Konuşmacı Sayısı Seçimi -->
+            <div style="margin-top: 1rem; display: flex; align-items: center; justify-content: center; gap: 0.75rem; padding: 0.6rem 1rem; background: rgba(15, 23, 42, 0.5); border-radius: 0.75rem; border: 1px solid rgba(255, 255, 255, 0.08); flex-wrap: wrap;">
+                <label for="numSpeakersInput" style="font-size: 0.875rem; color: #cbd5e1; font-weight: 500; display: flex; align-items: center; gap: 0.35rem;">
+                    👥 <span>Kaç kişi konuşuyor?</span>
+                    <span style="font-size: 0.75rem; color: #94a3b8; font-weight: 400;">(Opsiyonel)</span>:
+                </label>
+                <select id="numSpeakersInput" style="background: #0f172a; border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; padding: 0.4rem 0.85rem; border-radius: 0.5rem; font-size: 0.85rem; font-weight: 600; outline: none; cursor: pointer;">
+                    <option value="">Otomatik (Bilinmiyor)</option>
+                    <option value="1">1 Kişi (Tek Konuşmacı)</option>
+                    <option value="2">2 Kişi (Karşılıklı Sohbet / Diyalog)</option>
+                    <option value="3">3 Kişi</option>
+                    <option value="4">4 Kişi</option>
+                    <option value="5">5 Kişi</option>
+                    <option value="6">6 Kişi</option>
+                    <option value="7">7 Kişi</option>
+                    <option value="8">8 Kişi</option>
+                    <option value="9">9 Kişi</option>
+                    <option value="10">10 Kişi</option>
+                </select>
+            </div>
+
             <!-- Durum Göstergesi -->
             <div class="status-container" id="statusContainer">
                 <div class="spinner"></div>
@@ -753,6 +774,14 @@
 
             const formData = new FormData();
             formData.append('file', file);
+
+            const numSpeakersSelect = document.getElementById('numSpeakersInput');
+            if (numSpeakersSelect && numSpeakersSelect.value) {
+                const spkCount = parseInt(numSpeakersSelect.value, 10);
+                if (!isNaN(spkCount) && spkCount > 0) {
+                    formData.append('num_speakers', spkCount);
+                }
+            }
 
             try {
                 // 1. POST /api/v1/analyze
