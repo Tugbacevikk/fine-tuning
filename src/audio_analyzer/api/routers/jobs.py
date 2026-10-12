@@ -2,6 +2,7 @@ import asyncio
 import logging
 import mimetypes
 import os
+import re
 import secrets
 import uuid
 from pathlib import Path
@@ -417,7 +418,92 @@ async def update_utterance_speaker(
     if not success:
         raise HTTPException(status_code=404, detail="Güncellenecek cümle bulunamadı.")
 
+    # Otomatik RTTM senkronizasyonu: 'Değişikliği Kaydet' tıklandığında tests/fixtures/diarization_eval/real_turkish altına kaydeder
+    try:
+        updated_rec = await repository.get_record_by_id(record_uuid)
+        if updated_rec and updated_rec.utterances:
+            storage = get_storage_adapter()
+            audio_bytes = None
+            try:
+                audio_bytes = storage.get_bytes(updated_rec.storage_uri)
+            except Exception:
+                pass
+            export_job_as_rttm(updated_rec, audio_bytes=audio_bytes)
+    except Exception as exp_err:
+        logger.warning("Otomatik RTTM dışa aktarma uyarısı: %s", exp_err)
+
     return {"status": "SUCCESS", "message": "Konuşmacı etiketi başarıyla güncellendi."}
+
+
+def export_job_as_rttm(record, audio_bytes: bytes | None = None) -> tuple[str, str]:
+    """
+    Kayıttaki utterance'ları standart RTTM formatında ve orijinal ses dosyasını
+    tests/fixtures/diarization_eval/real_turkish dizinine kaydeder.
+    """
+    target_dir = Path("tests/fixtures/diarization_eval/real_turkish")
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    raw_stem = Path(record.file_name).stem
+    safe_stem = re.sub(r"[^\w\-]", "_", raw_stem).strip("_") or f"sample_{str(record.id)[:8]}"
+
+    rttm_path = target_dir / f"{safe_stem}.rttm"
+    wav_path = target_dir / f"{safe_stem}.wav"
+
+    if audio_bytes and len(audio_bytes) > 0:
+        with open(wav_path, "wb") as f_wav:
+            f_wav.write(audio_bytes)
+
+    sorted_utts = sorted(record.utterances, key=lambda u: u.start_time)
+    with open(rttm_path, "w", encoding="utf-8") as f_rttm:
+        for u in sorted_utts:
+            dur = max(0.01, round(u.end_time - u.start_time, 3))
+            start_t = round(u.start_time, 3)
+            f_rttm.write(
+                f"SPEAKER {safe_stem} 1 {start_t:.3f} {dur:.3f} <NA> <NA> {u.speaker_id} <NA> <NA>\n"
+            )
+
+    return str(rttm_path), str(wav_path)
+
+
+@router.post("/jobs/{job_id}/export-rttm")
+async def export_job_rttm(
+    job_id: str,
+    repository: ITranscriptRepository = Depends(get_repository),
+    _api_key: str | None = Depends(verify_api_key),
+):
+    """
+    Düzeltilmiş RTTM dışa aktarma:
+    Kullanıcının yaptığı düzenlemeleri gerçek test seti oluşturmak için
+    'tests/fixtures/diarization_eval/real_turkish' altına RTTM ve WAV olarak kaydeder.
+    """
+    try:
+        record_uuid = uuid.UUID(job_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz UUID formatı.")
+
+    record = await repository.get_record_by_id(record_uuid)
+    if not record:
+        raise HTTPException(status_code=404, detail="Ses analizi görevi bulunamadı.")
+
+    if not record.utterances:
+        raise HTTPException(status_code=400, detail="Dışa aktarılacak konuşmacı bloğu (utterance) bulunamadı.")
+
+    storage = get_storage_adapter()
+    audio_bytes = None
+    try:
+        audio_bytes = storage.get_bytes(record.storage_uri)
+    except Exception as e:
+        logger.warning("Ses baytları depolamadan alınamadı: %s", e)
+
+    rttm_p, wav_p = export_job_as_rttm(record, audio_bytes=audio_bytes)
+
+    return {
+        "status": "SUCCESS",
+        "message": "Düzeltilmiş RTTM ve ses dosyası başarıyla 'tests/fixtures/diarization_eval/real_turkish' dizinine aktarıldı.",
+        "rttm_file": rttm_p,
+        "wav_file": wav_p,
+        "total_utterances": len(record.utterances),
+    }
 
 
 @router.delete("/jobs/{job_id}/utterances/{utterance_id}")

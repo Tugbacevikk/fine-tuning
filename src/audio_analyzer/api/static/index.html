@@ -574,6 +574,7 @@
                     <button style="background: rgba(16, 185, 129, 0.2); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4); padding: 0.4rem 0.85rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600; cursor: pointer;" onclick="exportAsTxt()">📄 TXT İndir</button>
                     <button style="background: rgba(59, 130, 246, 0.2); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.4); padding: 0.4rem 0.85rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600; cursor: pointer;" onclick="exportAsSrt()">🎬 SRT İndir</button>
                     <button style="background: rgba(245, 158, 11, 0.2); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.4); padding: 0.4rem 0.85rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600; cursor: pointer;" onclick="exportAsJson()">📊 JSON İndir</button>
+                    <button style="background: rgba(139, 92, 246, 0.25); color: #c4b5fd; border: 1px solid rgba(139, 92, 246, 0.5); padding: 0.4rem 0.85rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600; cursor: pointer;" onclick="exportCurrentJobAsRttm()">📥 Gerçek Test Setine Kaydet (RTTM)</button>
                     <button style="background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); padding: 0.4rem 0.85rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600; cursor: pointer;" onclick="deleteCurrentJob()">🗑️ Analizi Sil</button>
                 </div>
             </div>
@@ -1172,7 +1173,7 @@
                         body: JSON.stringify({ speaker_id: selectElem.value, text: textElem.innerText })
                     });
                     if (res.ok) {
-                        showToast('Değişiklikler başarıyla kaydedildi!', 'success');
+                        showToast('Değişiklikler ve real_turkish RTTM seti başarıyla kaydedildi!', 'success');
                     } else {
                         const errData = await res.json().catch(() => ({}));
                         showToast(errData.detail || 'Kaydetme başarısız!', 'error');
@@ -1181,6 +1182,28 @@
                     console.error(err);
                     showToast('Sunucu bağlantı hatası.', 'error');
                 }
+            }
+        }
+
+        async function exportCurrentJobAsRttm() {
+            if (!currentJobData || !currentJobData.job_id) {
+                showToast('Aktarılacak aktif analiz bulunamadı!', 'error');
+                return;
+            }
+            try {
+                const res = await apiFetch(`/api/v1/jobs/${currentJobData.job_id}/export-rttm`, {
+                    method: 'POST'
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    showToast('Düzeltilmiş RTTM ve ses real_turkish test setine kaydedildi!', 'success');
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    showToast(err.detail || 'RTTM aktarımı başarısız!', 'error');
+                }
+            } catch (e) {
+                console.error(e);
+                showToast('Sunucu bağlantı hatası!', 'error');
             }
         }
 
