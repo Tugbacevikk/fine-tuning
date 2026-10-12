@@ -33,11 +33,8 @@ class SemanticRefiner:
         self.use_llm = use_llm if use_llm is not None else settings.use_llm
         self.ollama_url = ollama_url or settings.ollama_url
         self.model_name = model_name or settings.ollama_model
-        self.split_on_questions = (
-            split_on_questions
-            if split_on_questions is not None
-            else (os.getenv("SPLIT_ON_QUESTIONS", "false").lower() == "true")
-        )
+        if split_on_questions is not None:
+            logger.warning("split_on_questions parametresi kullanımdan kaldırılmıştır ve yok sayılmaktadır.")
 
         # Varsayılan genel amaçlı modda alan tetikleyicileri boştur (domain-agnostic).
         self.agent_triggers: list[str] = []
@@ -127,12 +124,7 @@ class SemanticRefiner:
             else:
                 split_result = [utt]
 
-            # Soru işareti sonrası diyalog ve konuşmacı dönüşümlerini ayrıştır
-            dialogue_split: list[TranscriptUtterance] = []
-            for item in split_result:
-                dialogue_split.extend(self._split_dialogue_turns(item))
-
-            refined.extend(dialogue_split)
+            refined.extend(split_result)
 
         # 3. Yalnızca çağrı merkezi (call_center) modunda açılış selamlamasını kitle (Role Anchoring)
         if self.domain_mode == "call_center":
@@ -142,74 +134,6 @@ class SemanticRefiner:
 
         smoothed = self._smooth_orphan_and_sandwich_speakers(anchored_utterances)
         return self._normalize_short_gaps(smoothed)
-
-    def _split_dialogue_turns(
-        self, utt: TranscriptUtterance
-    ) -> list[TranscriptUtterance]:
-        """
-        Diyalog kiti: Tek bir konuşmacı kartına birleştirilmiş olan
-        soru-cevap ve diyalog cümlelerini ('?' işareti ve takip eden cümleler)
-        alternatif konuşmacılara (SPEAKER_00 / SPEAKER_01) böler.
-        """
-        if not self.split_on_questions:
-            return [utt]
-
-        text = utt.text.strip()
-        if not text or "?" not in text:
-            return [utt]
-
-        # '?' karakterinden sonra metin var mı kontrol et
-        parts = re.split(r'(\?+)', text)
-        if len(parts) <= 2:
-            return [utt]
-
-        segments: list[str] = []
-        i = 0
-        while i < len(parts):
-            seg_text = parts[i].strip()
-            if not seg_text:
-                i += 1
-                continue
-            if i + 1 < len(parts) and parts[i + 1].startswith("?"):
-                seg_text += "?"
-                i += 2
-            else:
-                i += 1
-            if seg_text:
-                segments.append(seg_text)
-
-        if len(segments) <= 1:
-            return [utt]
-
-        total_chars = max(len(text), 1)
-        total_duration = utt.end_time - utt.start_time
-
-        result: list[TranscriptUtterance] = []
-        current_time = utt.start_time
-
-        spk_0 = utt.speaker_id
-        spk_1 = "SPEAKER_01" if spk_0 == "SPEAKER_00" else "SPEAKER_00"
-
-        for idx, seg in enumerate(segments):
-            seg_duration = (len(seg) / total_chars) * total_duration
-            seg_end = round(current_time + seg_duration, 2)
-            if idx == len(segments) - 1:
-                seg_end = utt.end_time
-
-            seg_spk = spk_0 if (idx % 2 == 0) else spk_1
-
-            result.append(
-                TranscriptUtterance(
-                    id=uuid.uuid4(),
-                    speaker_id=seg_spk,
-                    start_time=round(current_time, 2),
-                    end_time=seg_end,
-                    text=seg,
-                )
-            )
-            current_time = seg_end
-
-        return result
 
     def _clean_repetitive_text(self, text: str) -> str:
         """

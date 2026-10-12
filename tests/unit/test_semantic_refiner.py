@@ -41,23 +41,7 @@ def test_semantic_refiner_domain_mode_greeting_lock_scope():
     assert res_cc[0].speaker_id == "SPEAKER_00"
 
 
-def test_semantic_refiner_splits_dialogue_question_turns():
-    refiner = SemanticRefiner(split_on_questions=True)
-    utt = TranscriptUtterance(
-        id=uuid.uuid4(),
-        speaker_id="SPEAKER_00",
-        start_time=10.0,
-        end_time=20.0,
-        text="Merhaba doktor bey, hasta ne zaman taburcu olacak? Hasta yakınlarını şimdi almaya başlıyoruz.",
-    )
 
-    result = refiner.refine([utt])
-
-    assert len(result) == 2
-    assert result[0].speaker_id == "SPEAKER_00"
-    assert "hasta ne zaman taburcu olacak?" in result[0].text
-    assert result[1].speaker_id == "SPEAKER_01"
-    assert "Hasta yakınlarını şimdi almaya başlıyoruz." in result[1].text
 
 
 def test_semantic_refiner_llm_mode_does_not_bypass_rules_and_respects_feedback_profile(monkeypatch):
