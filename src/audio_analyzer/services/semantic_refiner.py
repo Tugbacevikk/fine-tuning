@@ -42,7 +42,9 @@ class SemanticRefiner:
 
     def _query_ollama_llm(self, prompt: str) -> str | None:
         """
+        [DENEYSEL / EXPERIMENTAL]
         Yerel Ollama LLM servisine (Llama-3.2 / Qwen-2.5) istek atarak anlamsal analiz yaptırır.
+        NOT: num_predict=256 uzun diyalog dökümlerinde JSON yanıtını kesebilir ve akustik kanıtları ezebilir.
         Ollama erişilebilir değilse None döner.
         """
         try:
@@ -179,7 +181,17 @@ class SemanticRefiner:
 
     def _refine_with_llm(self, utterances: list[TranscriptUtterance]) -> list[TranscriptUtterance]:
         """
+        [DENEYSEL / EXPERIMENTAL]
         Yerel Ollama LLM (Llama-3.2 / Qwen-2.5) kullanarak konuşmacı etiketlerini anlamsal bütüne göre düzeltir.
+
+        UYARI VE KULLANIM NOTLARI:
+        1. Çağrı merkezi varsayımı: Prompt sabit olarak yalnızca 2 taraf varsayar ('Temsilci/Görevli' ve 'Müşteri/Hasta').
+           Genel diyaloglarda, toplantılarda veya çoklu konuşmacı senaryolarında akustik gerçekliği bozar.
+        2. num_predict=256 sınırı: Uzun diyaloglarda (10-15+ segment) üretilen JSON dizesi kesilebilir ve ayrıştırma başarısız olur.
+        3. Akustik kanıtı ezme riski: Akustik diarization modelinin (Sherpa-ONNX/Pyannote) çıkardığı ses izi kanıtlarını
+           salt metin tahminine dayanarak değiştirebilir.
+        Bu nedenlerle bu adım varsayılan olarak KAPALIDIR (USE_LLM=false) ve yalnızca deneysel amaçlıdır.
+
         Ollama yanıt vermezse veya JSON ayrıştırma hatası olursa orijinal konuşmacı listesini güvenle döndürür (fail-open).
         """
         if not utterances:
