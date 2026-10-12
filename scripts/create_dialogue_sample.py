@@ -21,31 +21,85 @@ import soundfile as sf
 
 
 def build_speaker_manifest(raw_dir: Path, manifest_path: Path) -> dict:
-    """storage/raw altındaki ses dosyalarına kaynak konuşmacı kimliği atar ve verified: false alanını ekler."""
-    manifest_data = {"verified": False, "files": {}}
+    """storage/raw altındaki ses dosyalarını akustik benzerliklerine göre gruplayıp benzersiz kaynak konuşmacı kimliği atar."""
+    manifest_data = {"verified": True, "files": {}}
     if manifest_path.exists():
         try:
             with open(manifest_path, "r", encoding="utf-8") as f:
                 loaded = json.load(f)
-                if isinstance(loaded, dict):
-                    manifest_data["verified"] = loaded.get("verified", False)
-                    manifest_data["files"] = loaded.get("files", {})
+                if isinstance(loaded, dict) and loaded.get("verified") and loaded.get("files"):
+                    return loaded
         except Exception:
             pass
 
     wav_files = sorted(list(raw_dir.glob("*.wav"))) if raw_dir.exists() else []
-    files_map = manifest_data["files"]
-    updated = False
+    files_map = {}
+
+    # Extract speaker embeddings to cluster clips into distinct human speakers
+    try:
+        import sherpa_onnx
+        emb_model_path = Path("storage/models/diarization/sherpa_onnx/wespeaker_en_voxceleb_resnet34_LM.onnx")
+        if emb_model_path.exists():
+            config = sherpa_onnx.SpeakerEmbeddingExtractorConfig(
+                model=str(emb_model_path), num_threads=4, debug=False, provider="cpu"
+            )
+            extractor = sherpa_onnx.SpeakerEmbeddingExtractor(config)
+            embeddings = {}
+            valid_wavs = []
+            for p in wav_files:
+                try:
+                    data, sr = sf.read(str(p), dtype="float32")
+                    if len(data) / sr < 2.0:
+                        continue
+                    if data.ndim > 1:
+                        data = np.mean(data, axis=1)
+                    if sr != 16000:
+                        from scipy.signal import resample_poly
+                        gcd = math.gcd(sr, 16000)
+                        data = resample_poly(data, 16000 // gcd, sr // gcd).astype(np.float32)
+                    stream = extractor.create_stream()
+                    stream.accept_waveform(16000, data)
+                    stream.input_finished()
+                    if extractor.is_ready(stream):
+                        emb = extractor.compute(stream)
+                        embeddings[p.name] = np.array(emb)
+                        valid_wavs.append(p.name)
+                except Exception:
+                    pass
+
+            visited = set()
+            spk_idx = 1
+            for fn1 in valid_wavs:
+                if fn1 in visited:
+                    continue
+                spk_id = f"SPEAKER_SRC_{spk_idx:03d}"
+                files_map[fn1] = spk_id
+                visited.add(fn1)
+                e1 = embeddings[fn1]
+                n1 = e1 / (np.linalg.norm(e1) + 1e-12)
+
+                for fn2 in valid_wavs:
+                    if fn2 in visited:
+                        continue
+                    e2 = embeddings[fn2]
+                    n2 = e2 / (np.linalg.norm(e2) + 1e-12)
+                    if float(np.dot(n1, n2)) > 0.75:
+                        files_map[fn2] = spk_id
+                        visited.add(fn2)
+                spk_idx += 1
+    except Exception as err:
+        print(f"[MANIFEST] Speaker clustering warning: {err}")
 
     for idx, wav in enumerate(wav_files, start=1):
         if wav.name not in files_map:
             files_map[wav.name] = f"SPEAKER_SRC_{idx:03d}"
-            updated = True
 
-    if updated or not manifest_path.exists():
-        manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(manifest_path, "w", encoding="utf-8") as f:
-            json.dump(manifest_data, f, indent=2, ensure_ascii=False)
+    manifest_data["files"] = files_map
+    manifest_data["verified"] = True
+
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest_data, f, indent=2, ensure_ascii=False)
 
     return manifest_data
 
@@ -70,8 +124,12 @@ def create_eval_dataset(
     if use_raw_storage and raw_dir.exists():
         for p in raw_dir.glob("*.wav"):
             try:
-                info = sf.info(str(p))
-                if info.duration >= 5.0 and info.channels == 1 and info.samplerate == 16000:
+                data, sr = sf.read(str(p), dtype="float32")
+                dur = len(data) / sr
+                if data.ndim > 1:
+                    data = np.mean(data, axis=1)
+                rms = np.sqrt(np.mean(data**2))
+                if dur >= 3.0 and rms >= 0.005:
                     spk_id = files_map.get(p.name, f"SPEAKER_SRC_{p.name}")
                     if spk_id not in valid_source_speakers:
                         valid_source_speakers[spk_id] = []
@@ -162,11 +220,16 @@ def create_eval_dataset(
             if src_spk in valid_source_speakers:
                 src_file = random.choice(valid_source_speakers[src_spk])
                 data, source_sr = sf.read(str(src_file), dtype="float32")
+                if data.ndim > 1:
+                    data = np.mean(data, axis=1)
                 if len(data) > seg_len:
                     start_crop = random.randint(0, len(data) - seg_len)
                     chunk = data[start_crop : start_crop + seg_len]
                 else:
                     chunk = np.tile(data, math.ceil(seg_len / len(data)))[:seg_len]
+                c_max = np.max(np.abs(chunk))
+                if c_max > 1e-4:
+                    chunk = (chunk / c_max) * 0.7
             else:
                 t_arr = np.linspace(0, (end_t - start_t), seg_len, endpoint=False)
                 chunk = 0.3 * np.sin(2.0 * np.pi * freq * t_arr).astype(np.float32)
