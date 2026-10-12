@@ -37,8 +37,8 @@ def is_transient_error(ex: Exception) -> bool:
     if isinstance(ex, TransientJobError):
         return True
 
-    # Bilinen kalıcı Python istisnaları
-    if isinstance(ex, (ValueError, TypeError)):
+    # Bilinen kalıcı Python istisnaları (bozuk girdi, tip hatası, bulunamayan/silinmiş dosya)
+    if isinstance(ex, (ValueError, TypeError, FileNotFoundError)):
         return False
 
     err_str = str(ex).lower()
@@ -51,6 +51,9 @@ def is_transient_error(ex: Exception) -> bool:
         "not a valid audio",
         "bozuk",
         "desteklenmeyen",
+        "file not found",
+        "no such file",
+        "bulunamadı",
     ]
     if any(kw in err_str for kw in permanent_keywords):
         return False

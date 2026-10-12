@@ -208,7 +208,8 @@ async def readiness_check():
     except Exception as ex:
         logger.error("Readiness DB kontrol hatası: %s", ex)
 
-    # 2. Redis Kontrolü
+    # 2. Redis & Worker Kontrolü
+    worker_ok = True
     try:
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         import redis.asyncio as aioredis
@@ -221,8 +222,30 @@ async def readiness_check():
         client = aioredis.Redis(connection_pool=pool)
         pong = await client.ping()
         redis_ok = bool(pong)
+
+        if use_redis_stream:
+            worker_ok = False
+            # a) Worker heartbeat kontrolü
+            hb = await client.get("audio_analyzer:worker_heartbeat")
+            if hb:
+                worker_ok = True
+            else:
+                # b) Consumer group aktiflik kontrolü (son 30 sn içinde aktif tüketici)
+                try:
+                    stream_key = os.getenv("STREAM_NAME", "audio_analysis_stream")
+                    group_name = os.getenv("STREAM_GROUP", "audio_workers_group")
+                    consumers = await client.xinfo_consumers(stream_key, group_name)
+                    if consumers:
+                        for c in consumers:
+                            idle = c.get("idle", 999999) if isinstance(c, dict) else 999999
+                            if idle < 30000:
+                                worker_ok = True
+                                break
+                except Exception:
+                    pass
     except Exception as ex:
-        logger.warning("Readiness Redis kontrol uyarısı: %s", ex)
+        logger.warning("Readiness Redis/Worker kontrol uyarısı: %s", ex)
+        worker_ok = False
 
     # 3. Model Yüklü Kontrolü (Senkron yükleme yapmadan kontrol eder)
     try:
@@ -234,7 +257,7 @@ async def readiness_check():
     except Exception as ex:
         logger.warning("Readiness Model kontrol uyarısı: %s", ex)
 
-    is_ready = db_ok and (redis_ok if use_redis_stream else True)
+    is_ready = db_ok and ((redis_ok and worker_ok) if use_redis_stream else True)
     status_code = 200 if is_ready else 503
 
     return Response(
@@ -243,6 +266,7 @@ async def readiness_check():
                 "status": "READY" if is_ready else "NOT_READY",
                 "database": "OK" if db_ok else "ERROR",
                 "redis": "OK" if redis_ok else "ERROR",
+                "worker": "OK" if worker_ok else "DOWN",
                 "model_loaded": "OK" if model_ok else "PENDING",
             }
         ),

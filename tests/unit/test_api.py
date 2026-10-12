@@ -12,11 +12,14 @@ from audio_analyzer.api.main import app
 @pytest.fixture
 def client(monkeypatch):
     from audio_analyzer.config import reset_settings
+    from audio_analyzer.services.pipeline_factory import reset_pipeline_cache
     monkeypatch.setenv("API_KEY", "")
     reset_settings()
+    reset_pipeline_cache()
     with TestClient(app) as c:
         yield c
     reset_settings()
+    reset_pipeline_cache()
 
 
 def make_valid_wav_bytes() -> bytes:

@@ -191,6 +191,8 @@ class JobService:
                     res = await asyncio.to_thread(self.pipeline.process_bytes, file_bytes)
             else:
                 local_path = await asyncio.to_thread(self.storage.get_path, record.storage_uri)
+                if (not local_path or not os.path.exists(local_path)) and not file_bytes:
+                    raise FileNotFoundError(f"Ses dosyası depolamada bulunamadı: {record.storage_uri}")
                 temp_local_file = None
                 try:
                     if (not local_path or not os.path.exists(local_path)) and file_bytes:

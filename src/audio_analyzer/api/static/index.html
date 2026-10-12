@@ -512,6 +512,15 @@
             <p class="subtitle">Gelişmiş Yapay Zeka ile Otomatik Transkripsiyon ve Diyarizasyon</p>
         </header>
 
+        <!-- Worker Durum Uyarısı (Gerektiğinde Dinamik Olarak Gösterilir) -->
+        <div id="workerAlertBanner" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.5); color: #fca5a5; padding: 1rem 1.25rem; border-radius: 0.75rem; margin-bottom: 1.5rem; align-items: center; gap: 0.75rem;">
+            <span style="font-size: 1.5rem;">⚠️</span>
+            <div style="flex: 1;">
+                <strong id="workerAlertTitle" style="color: #fecaca; font-size: 0.95rem; display: block;">Arka Plan İşleyici (Worker) Uyarısı</strong>
+                <span id="workerAlertDesc" style="font-size: 0.85rem; color: #fca5a5;">Worker servisi kapalı olabilir veya bazı işlemler 5 dakikadan uzun süredir PENDING durumunda bekliyor.</span>
+            </div>
+        </div>
+
         <!-- Yükleme Kartı -->
         <div class="glass-card">
             <div class="upload-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
@@ -816,7 +825,9 @@
             }
         }
 
+        let currentPollStartTime = 0;
         async function pollJobStatus(jobId) {
+            currentPollStartTime = Date.now();
             const interval = setInterval(async () => {
                 try {
                     const res = await apiFetch(`/api/v1/jobs/${jobId}`);
@@ -842,6 +853,20 @@
                         clearInterval(interval);
                         statusContainer.style.display = 'none';
                         showToast(job.error_message || 'Bilinmeyen hata', 'error', 'Analiz Başarısız Oldu');
+                    } else if (job.status === 'PENDING') {
+                        const elapsedSec = (Date.now() - currentPollStartTime) / 1000;
+                        if (elapsedSec > 300) {
+                            const banner = document.getElementById('workerAlertBanner');
+                            if (banner) {
+                                banner.style.display = 'flex';
+                                document.getElementById('workerAlertTitle').innerText = '⚠️ Analiz Görevi 5+ Dakikadır Sırada Bekliyor!';
+                                document.getElementById('workerAlertDesc').innerText = 'Bu analiz 5 dakikadan uzun süredir PENDING durumunda bekliyor. Arka plan worker servisi (stream_worker) durmuş veya çökmüş olabilir.';
+                            }
+                            const statusTitle = document.getElementById('statusTitle');
+                            const statusDesc = document.getElementById('statusDesc');
+                            if (statusTitle) statusTitle.innerHTML = '<span style="color: #fca5a5;">⚠️ Sırada Bekliyor (5+ Dakika)</span>';
+                            if (statusDesc) statusDesc.innerHTML = '<span style="color: #fca5a5;">Analiz 5 dakikadır başlamadı. Worker servisi çalışmıyor veya yoğun birikme var.</span>';
+                        }
                     }
                 } catch (e) {
                     console.error(e);
@@ -1224,6 +1249,29 @@
             return `${mins.toString().padStart(2, '0')}:${secs.padStart(5, '0')}s`;
         }
 
+        let hasStalePendingJobs = false;
+
+        async function checkWorkerHealth() {
+            try {
+                const res = await apiFetch('/health/ready');
+                const data = await res.json().catch(() => ({}));
+                const banner = document.getElementById('workerAlertBanner');
+                const title = document.getElementById('workerAlertTitle');
+                const desc = document.getElementById('workerAlertDesc');
+                if (!banner) return;
+
+                if (data.worker === 'DOWN' || data.status === 'NOT_READY') {
+                    banner.style.display = 'flex';
+                    title.innerText = '⚠️ Arka Plan Analiz İşleyicisi (Worker) Çalışmıyor!';
+                    desc.innerText = 'stream_worker servisi kapalı veya çökmüş durumda. Kuyruktaki ses analizleri bekletilecek ancak worker başlatılana kadar işlenmeyecektir. Lütfen konsolda "python -m audio_analyzer.workers.stream_worker" komutunu çalıştırın.';
+                } else if (!hasStalePendingJobs) {
+                    banner.style.display = 'none';
+                }
+            } catch (err) {
+                console.warn('Worker sağlık kontrolü hatası:', err);
+            }
+        }
+
         async function loadHistory() {
             const historyList = document.getElementById('historyList');
             if (!historyList) return;
@@ -1235,19 +1283,35 @@
                     historyList.innerHTML = '<p style="color: var(--text-muted); font-size: 0.875rem;">Henüz kaydedilmiş bir ses analizi bulunmuyor.</p>';
                     return;
                 }
+                hasStalePendingJobs = false;
                 historyList.innerHTML = jobs.map(j => {
                     const safeFileName = escapeHtml(j.file_name);
                     const safeJobId = escapeHtml(j.job_id);
                     const safeStatus = escapeHtml(j.status);
                     const safeLanguage = escapeHtml((j.language || 'tr').toUpperCase());
                     const count = j.utterances ? j.utterances.length : 0;
+
+                    const isPending = j.status === 'PENDING';
+                    let isStale = false;
+                    if (isPending && j.created_at) {
+                        const ageMs = Date.now() - new Date(j.created_at).getTime();
+                        if (ageMs > 300000) { // 5 dakikadan uzun
+                            isStale = true;
+                            hasStalePendingJobs = true;
+                        }
+                    }
+
                     const statusColor = j.status === 'COMPLETED' ? '#10b981' : (j.status === 'FAILED' ? '#ef4444' : '#f59e0b');
+                    const statusTextHtml = isStale
+                        ? `<span style="color: #ef4444; font-weight: 700;">${safeStatus} (⚠️ 5+ dk bekliyor - Worker kontrol edilmeli)</span>`
+                        : `<span style="color: ${statusColor}; font-weight: 600;">${safeStatus}</span>`;
+
                     return `
                         <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.05); padding: 0.85rem 1.15rem; border-radius: 0.75rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
                             <div>
                                 <strong style="color: #f8fafc; font-size: 0.95rem;">🎵 ${safeFileName}</strong>
                                 <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">
-                                    Durum: <span style="color: ${statusColor}; font-weight: 600;">${safeStatus}</span> | Dil: ${safeLanguage} | Blok: ${count} Adet
+                                    Durum: ${statusTextHtml} | Dil: ${safeLanguage} | Blok: ${count} Adet
                                 </div>
                             </div>
                             <div style="display: flex; gap: 0.5rem;">
@@ -1257,6 +1321,15 @@
                         </div>
                     `;
                 }).join('');
+
+                if (hasStalePendingJobs) {
+                    const banner = document.getElementById('workerAlertBanner');
+                    if (banner) {
+                        banner.style.display = 'flex';
+                        document.getElementById('workerAlertTitle').innerText = '⚠️ Kuyrukta 5+ Dakikadır Bekleyen Görevler Var!';
+                        document.getElementById('workerAlertDesc').innerText = 'Bazı ses analizleri 5 dakikadan uzun süredir PENDING durumunda bekliyor. Arka plan worker servisini (stream_worker) kontrol edin.';
+                    }
+                }
             } catch (err) {
                 console.error(err);
             }
@@ -1362,6 +1435,8 @@
         window.addEventListener('DOMContentLoaded', () => {
             initApiKeyInput();
             loadHistory();
+            checkWorkerHealth();
+            setInterval(checkWorkerHealth, 15000);
         });
     </script>
 </body>

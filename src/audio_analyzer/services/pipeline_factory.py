@@ -38,21 +38,32 @@ def _build_pipeline() -> AudioAnalysisPipeline:
         stt_threads = max(1, total_threads // 2)
         diar_threads = max(1, total_threads - stt_threads)
 
-    # 1. STT Engine (FasterWhisper)
-    try:
-        from audio_analyzer.adapters.stt.faster_whisper_adapter import (
-            FasterWhisperAdapter,
-        )
+    # 1. STT Engine (FasterWhisper veya Test Mock)
+    import os
+    if os.getenv("ALLOW_MOCK_STT", "false").lower() == "true":
+        from audio_analyzer.domain.interfaces import ISTTEngine
+        from audio_analyzer.domain.models import WordSegment
 
-        stt_engine = FasterWhisperAdapter(
-            model_size=whisper_model_size,
-            device_config=device_config,
-            cpu_threads=stt_threads,
-        )
-    except Exception as e:
-        raise RuntimeError(
-            f"STT Motoru (FasterWhisper) başlatılamadı: {e}. Lütfen model bağımlılıklarını kontrol edin."
-        )
+        class MockSTTEngine(ISTTEngine):
+            def transcribe(self, audio_data):
+                return [WordSegment(word="Test", start_time=0.0, end_time=1.0)], "tr"
+
+        stt_engine = MockSTTEngine()
+    else:
+        try:
+            from audio_analyzer.adapters.stt.faster_whisper_adapter import (
+                FasterWhisperAdapter,
+            )
+
+            stt_engine = FasterWhisperAdapter(
+                model_size=whisper_model_size,
+                device_config=device_config,
+                cpu_threads=stt_threads,
+            )
+        except Exception as e:
+            raise RuntimeError(
+                f"STT Motoru (FasterWhisper) başlatılamadı: {e}. Lütfen model bağımlılıklarını kontrol edin."
+            )
 
     # 2. Diarization Engine Mimarisi (SherpaOnnx -> Community1 -> SpeechBrain ECAPA)
     from audio_analyzer.adapters.diarization.escalating_diarizer import EscalatingDiarizer

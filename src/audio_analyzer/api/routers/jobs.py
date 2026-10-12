@@ -110,6 +110,7 @@ class JobStatusResponse(BaseModel):
     error_message: str | None = None
     overlap_summary: OverlapSummary | None = None
     utterances: list[UtteranceResponse] = []
+    created_at: str | None = None
 
 
 class UtteranceUpdateRequest(BaseModel):
@@ -273,6 +274,7 @@ async def list_jobs(
                 for u in r.utterances
             ],
             overlap_summary=r.overlap_summary,
+            created_at=r.created_at.isoformat() if hasattr(r, "created_at") and r.created_at else None,
         )
         for r in records
     ]
@@ -316,6 +318,7 @@ async def get_job_status(
         error_message=record.error_message,
         overlap_summary=record.overlap_summary,
         utterances=utterances,
+        created_at=record.created_at.isoformat() if hasattr(record, "created_at") and record.created_at else None,
     )
 
 

@@ -32,6 +32,21 @@ class RedisStreamWorker:
         self.adapter = adapter or RedisStreamAdapter()
         self.running = False
         self._background_tasks: set[asyncio.Task] = set()
+        self._liveness_task: asyncio.Task | None = None
+
+    async def _liveness_heartbeat_loop(self, interval_sec: float = 5.0):
+        """Worker'ın hayatta olduğunu Redis'e periyodik olarak (TTL=15s) bildirir."""
+        client = self.adapter.get_client()
+        try:
+            while self.running:
+                now_str = str(time.time())
+                await client.set("audio_analyzer:worker_heartbeat", now_str, ex=15)
+                await client.set(f"audio_analyzer:worker_heartbeat:{self.consumer_name}", now_str, ex=15)
+                await asyncio.sleep(interval_sec)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.debug("Worker liveness heartbeat note: %s", e)
 
     async def _heartbeat_loop(self, msg_id: str, interval_sec: float = 15.0):
         try:
@@ -175,6 +190,10 @@ class RedisStreamWorker:
         )
 
         await self.adapter.create_consumer_group()
+        self._liveness_task = asyncio.create_task(self._liveness_heartbeat_loop())
+        self._background_tasks.add(self._liveness_task)
+        self._liveness_task.add_done_callback(self._background_tasks.discard)
+
         last_claim_time = time.monotonic()
 
         while self.running:
@@ -214,10 +233,14 @@ class RedisStreamWorker:
                 logger.error("Worker döngü hatası: %s", err, exc_info=True)
                 await asyncio.sleep(1.0)
 
+        if self._liveness_task and not self._liveness_task.done():
+            self._liveness_task.cancel()
         logger.info("Redis Stream Worker durduruldu: consumer_name=%s", self.consumer_name)
 
     def stop(self):
         self.running = False
+        if self._liveness_task and not self._liveness_task.done():
+            self._liveness_task.cancel()
         for task in list(self._background_tasks):
             if not task.done():
                 task.cancel()
