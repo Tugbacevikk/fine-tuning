@@ -48,7 +48,8 @@ class SemanticRefiner:
         Ollama erişilebilir değilse None döner.
         """
         try:
-            timeout_sec = float(os.getenv("OLLAMA_TIMEOUT_SEC", "45.0"))
+            settings = get_settings()
+            timeout_sec = settings.ollama_timeout_sec
             payload = {
                 "model": self.model_name,
                 "prompt": prompt,
@@ -91,7 +92,8 @@ class SemanticRefiner:
         utterances = cleaned_utterances
 
         # 1. LLM Modu aktifse ve PIPELINE_PROFILE != 'feedback' ise LLM adımını çağır
-        pipeline_profile = os.getenv("PIPELINE_PROFILE", "full").lower()
+        settings = get_settings()
+        pipeline_profile = settings.pipeline_profile
         if self.use_llm and pipeline_profile != "feedback":
             utterances = self._refine_with_llm(utterances)
 
@@ -277,8 +279,9 @@ class SemanticRefiner:
         if len(utterances) <= 1:
             return utterances
 
-        max_silence_threshold = float(os.getenv("MAX_SILENCE_THRESHOLD", "1.5"))
-        max_clause_gap = float(os.getenv("MAX_CLAUSE_GAP", "1.5"))
+        settings = get_settings()
+        max_silence_threshold = settings.max_silence_threshold
+        max_clause_gap = settings.max_clause_gap
 
         merged: list[TranscriptUtterance] = []
         i = 0

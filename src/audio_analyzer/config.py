@@ -74,6 +74,7 @@ class Settings:
     whisper_beam_size: int = field(default_factory=_get_whisper_beam_size)
     whisper_batch_size: int = field(default_factory=lambda: int(os.getenv("WHISPER_BATCH_SIZE", "8")))
     whisper_hotwords: str = field(default_factory=lambda: os.getenv("WHISPER_HOTWORDS", "").strip())
+    whisper_language: str = field(default_factory=lambda: os.getenv("WHISPER_LANGUAGE", "tr"))
     worker_cpu_threads: int = field(default_factory=lambda: int(os.getenv("WORKER_CPU_THREADS", "4")))
     diarization_engine: str = field(default_factory=lambda: os.getenv("DIARIZATION_ENGINE", "sherpa_onnx").lower())
     diarization_escalation: str = field(default_factory=lambda: os.getenv("DIARIZATION_ESCALATION", "off").lower())
@@ -89,6 +90,7 @@ class Settings:
         default_factory=lambda: _opt_int("TARGET_NUM_SPEAKERS") or _opt_int("NUM_SPEAKERS")
     )
     max_silence_threshold: float = field(default_factory=lambda: float(os.getenv("MAX_SILENCE_THRESHOLD", "1.5")))
+    max_clause_gap: float = field(default_factory=lambda: float(os.getenv("MAX_CLAUSE_GAP", "1.5")))
     enable_denoiser: bool = field(
         default_factory=lambda: os.getenv("ENABLE_DENOISER", "false").lower() == "true"
     )
@@ -102,6 +104,11 @@ class Settings:
         default_factory=lambda: float(os.getenv("PIPELINE_MIN_SNR_DB", "15.0"))
     )
     vad_engine: str = field(default_factory=lambda: os.getenv("VAD_ENGINE", "faster_whisper").lower())
+    enable_vad_filter: bool = field(
+        default_factory=lambda: (
+            os.getenv("ENABLE_VAD_FILTER", os.getenv("WHISPER_VAD_FILTER", "false")).lower() == "true"
+        )
+    )
     run_pipeline_sequentially: bool = field(
         default_factory=lambda: os.getenv("RUN_PIPELINE_SEQUENTIALLY", "true").lower() == "true"
     )
@@ -142,6 +149,7 @@ class Settings:
     use_llm: bool = field(default_factory=lambda: os.getenv("USE_LLM", "false").lower() == "true")
     ollama_url: str = field(default_factory=lambda: os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate"))
     ollama_model: str = field(default_factory=lambda: os.getenv("OLLAMA_MODEL", "llama3.2"))
+    ollama_timeout_sec: float = field(default_factory=lambda: float(os.getenv("OLLAMA_TIMEOUT_SEC", "45.0")))
 
     # 6. Sweeper & DLQ (Yeniden Deneme ve Garanti Hizmeti)
     sweeper_interval_sec: float = field(default_factory=lambda: float(os.getenv("SWEEPER_INTERVAL_SEC", "30.0")))

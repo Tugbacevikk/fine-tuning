@@ -31,6 +31,7 @@ class RedisStreamWorker:
         self.consumer_name = consumer_name or f"worker_{os.getpid()}_{uuid.uuid4().hex[:6]}"
         self.adapter = adapter or RedisStreamAdapter()
         self.running = False
+        self._background_tasks: set[asyncio.Task] = set()
 
     async def _heartbeat_loop(self, msg_id: str, interval_sec: float = 15.0):
         try:
@@ -91,22 +92,32 @@ class RedisStreamWorker:
                 )
                 return False
             elif res_status == "RETRY":
-                # Geçici hata -> Üstel backoff sonrası yeniden akışa yayınla ve eski mesajı XACK et
+                # Geçici hata -> Worker loop'unu bloke etmeden arka planda üstel backoff sonrası yeniden akışa yayınla ve eski mesajı XACK et
                 backoff_sec = min(30.0, float(2 ** max(0, attempts - 1)))
                 logger.info(
-                    "Worker %s job_id=%s (attempts=%d) geçici hata aldı. %.1f sn backoff sonrası yeniden akışa yayınlanıyor.",
+                    "Worker %s job_id=%s (attempts=%d) geçici hata aldı. %.1f sn backoff arka planda beklenip yeniden akışa yayınlanacak.",
                     self.consumer_name,
                     job_id_str,
                     attempts,
                     backoff_sec,
                 )
-                await asyncio.sleep(backoff_sec)
-                await self.adapter.publish_job(
-                    job_id=job_id_str,
-                    file_name=fields.get("file_name", ""),
-                    callback_url=fields.get("callback_url", None),
-                )
-                await self.adapter.ack_message(msg_id)
+
+                async def _delayed_retry(b_sec: float, j_id: str, f_fields: dict, m_id: str):
+                    try:
+                        await asyncio.sleep(b_sec)
+                        await self.adapter.publish_job(
+                            job_id=j_id,
+                            file_name=f_fields.get("file_name", ""),
+                            callback_url=f_fields.get("callback_url", None),
+                        )
+                        await self.adapter.ack_message(m_id)
+                    except Exception as retry_err:
+                        logger.error("Gecikmeli yeniden deneme hatası (job_id=%s): %s", j_id, retry_err)
+
+                retry_task = asyncio.create_task(_delayed_retry(backoff_sec, job_id_str, fields, msg_id))
+                self._background_tasks.add(retry_task)
+                retry_task.add_done_callback(self._background_tasks.discard)
+                await asyncio.sleep(0)
                 return False
             else:
                 await self.adapter.ack_message(msg_id)
@@ -207,6 +218,9 @@ class RedisStreamWorker:
 
     def stop(self):
         self.running = False
+        for task in list(self._background_tasks):
+            if not task.done():
+                task.cancel()
 
 
 async def start_worker_main():

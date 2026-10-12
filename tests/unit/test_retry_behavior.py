@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
@@ -51,10 +52,11 @@ async def test_redis_stream_worker_republishes_on_retry():
     worker = RedisStreamWorker(adapter=adapter_mock)
 
     fake_repo = AsyncMock()
-    fake_repo.claim_job_atomically.return_value = (True, AudioRecord(id=uuid.uuid4(), file_name="t.wav", storage_uri="d://t.wav", status=JobStatus.PENDING), False)
+    fake_repo.claim_job_atomically.return_value = (True, AudioRecord(id=uuid.uuid4(), file_name="t.wav", storage_uri="disk://t.wav", status=JobStatus.PENDING), False)
     fake_repo.handle_job_failure.return_value = (1, False)  # RETRY
 
     fake_pipeline = MagicMock()
+    fake_pipeline.process.side_effect = RuntimeError("Transient Error")
     fake_pipeline.process_bytes.side_effect = RuntimeError("Transient Error")
 
     class DummyUOW:
@@ -76,6 +78,8 @@ async def test_redis_stream_worker_republishes_on_retry():
         result = await worker.process_single_message(msg_id, fields)
 
         assert result is False
+        if worker._background_tasks:
+            await asyncio.gather(*worker._background_tasks)
         # Verify job was republished to stream for RETRY and old message ACKed
         adapter_mock.publish_job.assert_called_once()
         adapter_mock.ack_message.assert_called_once_with(msg_id)

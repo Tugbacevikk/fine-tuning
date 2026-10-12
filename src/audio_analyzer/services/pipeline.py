@@ -233,10 +233,7 @@ class AudioAnalysisPipeline:
 
         # 3. VAD İşleme
         speech_timestamps: list[tuple[float, float]] | None = None
-        stt_has_vad = getattr(self.stt_engine, "has_vad_filter", True)
-        enable_vad_filter = (
-            os.getenv("ENABLE_VAD_FILTER", os.getenv("WHISPER_VAD_FILTER", "false")).lower() == "true"
-        )
+        enable_vad_filter = settings.enable_vad_filter
         if enable_vad_filter and self.vad_processor and (vad_engine == "silero" or not stt_has_vad):
             t0 = time.monotonic()
             try:

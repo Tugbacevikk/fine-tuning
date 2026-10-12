@@ -62,7 +62,7 @@ class FasterWhisperAdapter(ISTTEngine):
         self._lazy_load_model()
         from audio_analyzer.config import get_settings
         settings = get_settings()
-        language = os.getenv("WHISPER_LANGUAGE", "tr")
+        language = settings.whisper_language
         beam_size = settings.whisper_beam_size
         batch_size = settings.whisper_batch_size
         vad_params = dict(min_silence_duration_ms=1000, speech_pad_ms=400)
@@ -73,7 +73,7 @@ class FasterWhisperAdapter(ISTTEngine):
             else None
         )
 
-        use_vad_filter = os.getenv("WHISPER_VAD_FILTER", "false").lower() == "true"
+        use_vad_filter = settings.enable_vad_filter
         hotwords_raw = os.getenv("WHISPER_HOTWORDS", "").strip() or settings.whisper_hotwords
         hotwords_val = hotwords_raw if hotwords_raw else None
 
