@@ -7,7 +7,7 @@ from audio_analyzer.services.fusion_engine import FusionEngine
 @pytest.mark.unit
 def test_fusion_engine_speaker_attribution(sample_stt_words, sample_diarization_segments):
     """Kelime orta noktası ve IoU algoritmasının konuşmacıları doğru eşlediğini doğrular."""
-    engine = FusionEngine(max_silence_threshold=1.5)
+    engine = FusionEngine(max_silence_threshold=1.5, bind_short_turns=False)
     utterances = engine.align(sample_stt_words, sample_diarization_segments)
 
     assert len(utterances) == 3

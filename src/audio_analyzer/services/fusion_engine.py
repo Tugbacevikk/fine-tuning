@@ -13,11 +13,22 @@ class FusionEngine:
     birleştiren ve çakışma/sessizlik kurallarını uygulayan hizalama motoru.
     """
 
-    def __init__(self, max_silence_threshold: float = 1.5):
+    def __init__(
+        self,
+        max_silence_threshold: float = 1.5,
+        bind_short_turns: bool | None = None,
+    ):
         """
         :param max_silence_threshold: Aynı konuşmacı bu süreden (saniye) fazla susarsa yeni paragraf başlatır.
+        :param bind_short_turns: Süresi <1s, gap <0.3s ve noktalama ile bitmeyen parçaları önceki konuşmacıya bağlama adımı.
         """
+        import os
         self.max_silence_threshold = max_silence_threshold
+        if bind_short_turns is None:
+            env_val = os.getenv("BIND_SHORT_TURNS")
+            self.bind_short_turns = env_val.lower() == "true" if env_val is not None else True
+        else:
+            self.bind_short_turns = bind_short_turns
 
     def align(
         self, words: list[WordSegment], diarization_segments: list[DiarizationSegment]
@@ -45,10 +56,11 @@ class FusionEngine:
         raw_utterances = self._group_words_into_utterances(attributed_words)
 
         # 2b. Kısa parça bağlama (<1.0s, gap<0.3s, noktalama yok -> önceki konuşmacı)
-        bound_utterances = self._bind_short_unpunctuated_turns(raw_utterances)
+        if self.bind_short_turns:
+            raw_utterances = self._bind_short_unpunctuated_turns(raw_utterances)
 
         # 3. Konuşmacıları ilk görünme (kronolojik ses) sırasına göre SPEAKER_00, SPEAKER_01... olarak sıralama
-        return self._normalize_speaker_ids(bound_utterances)
+        return self._normalize_speaker_ids(raw_utterances)
 
     def _find_best_speaker_for_word(
         self, word: WordSegment, diarization_segments: list[DiarizationSegment]

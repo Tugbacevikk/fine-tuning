@@ -268,10 +268,32 @@ def run_evaluation(
     threshold: float | None = None,
     embedding_model: str | None = None,
     seed: int = 42,
+    split: str = "all",
+    merge_speakers: bool = True,
 ):
-    wav_files = sorted(list(data_dir.glob("*.wav")))
-    if not wav_files:
+    import re
+
+    all_wav_files = sorted(list(data_dir.glob("*.wav")))
+    if not all_wav_files:
         logger.error("[ERROR] Dizinde hiç .wav dosyası bulunamadı: %s", data_dir.absolute())
+        sys.exit(1)
+
+    def _extract_sample_num(stem: str) -> int:
+        m = re.search(r"eval_sample_(\d+)", stem)
+        if m:
+            return int(m.group(1))
+        m2 = re.search(r"(\d+)", stem)
+        return int(m2.group(1)) if m2 else 0
+
+    if split == "tuning":
+        wav_files = [f for f in all_wav_files if _extract_sample_num(f.stem) % 2 == 1]
+    elif split == "test":
+        wav_files = [f for f in all_wav_files if _extract_sample_num(f.stem) % 2 == 0]
+    else:
+        wav_files = all_wav_files
+
+    if not wav_files:
+        logger.error("[ERROR] Belirtilen '%s' alt kümesi için hiç .wav dosyası bulunamadı.", split)
         sys.exit(1)
 
     # speaker_manifest.json doğrulanma durumu kontrolü
@@ -366,6 +388,11 @@ def run_evaluation(
             )
             sys.exit(1)
 
+        if merge_speakers and hyp_segments:
+            from audio_analyzer.services.speaker_merger import SpeakerClusterMerger
+            merger = SpeakerClusterMerger()
+            hyp_segments = merger.merge(hyp_segments, num_speakers=target_num_speakers)
+
         hyp_annotation = Annotation(uri=file_stem)
         detected_speakers = set()
         for seg in hyp_segments:
@@ -446,6 +473,9 @@ def run_evaluation(
         "engine": engine_name,
         "timestamp": timestamp_str,
         "random_seed": seed,
+        "split": split,
+        "cluster_threshold": threshold,
+        "speaker_merge_applied": merge_speakers,
         "manifest_verified": manifest_verified,
         "num_files": len(results),
         "unknown_speakers": unknown_speakers,
@@ -545,6 +575,18 @@ if __name__ == "__main__":
         default=42,
         help="Rastgelelik seed değeri (Varsayılan: 42)",
     )
+    parser.add_argument(
+        "--split",
+        type=str,
+        default="all",
+        choices=["all", "tuning", "test"],
+        help="Veri seti alt kümesi: 'all' (hepsi), 'tuning' (tek sayılı diyaloglar), 'test' (çift sayılı diyaloglar)",
+    )
+    parser.add_argument(
+        "--no-speaker-merge",
+        action="store_true",
+        help="SpeakerClusterMerger küme birleştirme adımını devre dışı bırakır",
+    )
     args = parser.parse_args()
 
     if args.report_md:
@@ -561,4 +603,6 @@ if __name__ == "__main__":
             threshold=args.threshold,
             embedding_model=args.embedding_model,
             seed=args.seed,
+            split=args.split,
+            merge_speakers=not args.no_speaker_merge,
         )

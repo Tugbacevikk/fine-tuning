@@ -56,6 +56,7 @@ class FasterWhisperAdapter(ISTTEngine):
                 )
 
     def transcribe(self, audio_path: str) -> tuple[list[WordSegment], str | None]:
+        self._lazy_load_model()
         from audio_analyzer.config import get_settings
         settings = get_settings()
         language = os.getenv("WHISPER_LANGUAGE", "tr")
