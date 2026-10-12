@@ -73,6 +73,7 @@ class Settings:
     whisper_model_size: str = field(default_factory=lambda: os.getenv("WHISPER_MODEL_SIZE", "small"))
     whisper_beam_size: int = field(default_factory=_get_whisper_beam_size)
     whisper_batch_size: int = field(default_factory=lambda: int(os.getenv("WHISPER_BATCH_SIZE", "8")))
+    whisper_hotwords: str = field(default_factory=lambda: os.getenv("WHISPER_HOTWORDS", "").strip())
     worker_cpu_threads: int = field(default_factory=lambda: int(os.getenv("WORKER_CPU_THREADS", "4")))
     diarization_engine: str = field(default_factory=lambda: os.getenv("DIARIZATION_ENGINE", "sherpa_onnx").lower())
     diarization_escalation: str = field(default_factory=lambda: os.getenv("DIARIZATION_ESCALATION", "off").lower())

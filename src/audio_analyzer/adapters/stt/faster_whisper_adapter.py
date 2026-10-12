@@ -71,6 +71,8 @@ class FasterWhisperAdapter(ISTTEngine):
         )
 
         use_vad_filter = os.getenv("WHISPER_VAD_FILTER", "false").lower() == "true"
+        hotwords_raw = os.getenv("WHISPER_HOTWORDS", "").strip() or settings.whisper_hotwords
+        hotwords_val = hotwords_raw if hotwords_raw else None
 
         if self._batched_model is not None and self.device_config.device == "cuda":
             segments, info = self._batched_model.transcribe(
@@ -78,6 +80,7 @@ class FasterWhisperAdapter(ISTTEngine):
                 batch_size=batch_size,
                 language=language,
                 initial_prompt=prompt_str,
+                hotwords=hotwords_val,
                 word_timestamps=True,
                 beam_size=beam_size,
                 condition_on_previous_text=False,
@@ -95,6 +98,7 @@ class FasterWhisperAdapter(ISTTEngine):
                 audio_path,
                 language=language,
                 initial_prompt=prompt_str,
+                hotwords=hotwords_val,
                 word_timestamps=True,
                 beam_size=beam_size,
                 condition_on_previous_text=False,
