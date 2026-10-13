@@ -56,6 +56,8 @@ class SherpaOnnxAudioAdapter(IDiarizer):
         self.num_threads = num_threads
         self._pipeline = None
         self._config = None
+        self._embedding_extractor = None
+        self.last_speaker_embeddings = {}
         self._initialized = False
         self._lock = threading.Lock()
 
@@ -161,6 +163,11 @@ class SherpaOnnxAudioAdapter(IDiarizer):
                     return
 
                 self._pipeline = sherpa_onnx.OfflineSpeakerDiarization(self._config)
+                try:
+                    self._embedding_extractor = sherpa_onnx.SpeakerEmbeddingExtractor(emb_cfg)
+                except Exception as emb_err:
+                    logger.warning("Sherpa-ONNX SpeakerEmbeddingExtractor başlatılamadı: %s", emb_err)
+                    self._embedding_extractor = None
                 logger.info("Sherpa-ONNX konuşmacı motoru başarıyla aktifleştirildi.")
 
             except Exception as ex:
@@ -289,3 +296,53 @@ class SherpaOnnxAudioAdapter(IDiarizer):
         except Exception as err:
             logger.error("Sherpa-ONNX diarize işleminde hata oluştu (%s).", err, exc_info=True)
             return []
+
+    def extract_speaker_embeddings(
+        self, audio_input: object, segments: list[DiarizationSegment]
+    ) -> dict[str, np.ndarray]:
+        """
+        Diarization segmentlerindeki her bir konuşmacının ses kesitlerinden
+        SpeakerEmbeddingExtractor kullanarak normalize edilmiş ortalama embedding çıkarır.
+        """
+        if not segments:
+            return {}
+        try:
+            samples = self._prepare_samples(audio_input)
+            if len(samples) == 0:
+                return {}
+
+            self._lazy_load_pipeline()
+            if self._embedding_extractor is None:
+                return {}
+
+            sr = 16000
+            spk_samples: dict[str, list[np.ndarray]] = {}
+            for s in segments:
+                st_idx = max(0, int(s.start_time * sr))
+                en_idx = min(len(samples), int(s.end_time * sr))
+                if en_idx > st_idx + 800:  # En az 50ms
+                    spk_samples.setdefault(s.speaker_id, []).append(samples[st_idx:en_idx])
+
+            speaker_embeddings: dict[str, np.ndarray] = {}
+            for spk_id, chunks in spk_samples.items():
+                if not chunks:
+                    continue
+                # En fazla toplam 15 saniyelik ses parçasını birleştir
+                merged_chunk = np.concatenate(chunks[:10])
+                if len(merged_chunk) > sr * 15:
+                    merged_chunk = merged_chunk[: sr * 15]
+
+                if len(merged_chunk) >= 1600:  # >= 0.1s
+                    stream = self._embedding_extractor.create_stream()
+                    stream.accept_waveform(sr, merged_chunk)
+                    stream.input_finished()
+                    raw_emb = np.array(self._embedding_extractor.compute(stream), dtype=np.float32)
+                    norm = np.linalg.norm(raw_emb)
+                    if norm > 1e-12:
+                        speaker_embeddings[spk_id] = raw_emb / norm
+
+            self.last_speaker_embeddings = speaker_embeddings
+            return speaker_embeddings
+        except Exception as e:
+            logger.warning("Konuşmacı embedding çıkarımı sırasında hata: %s", e)
+            return {}

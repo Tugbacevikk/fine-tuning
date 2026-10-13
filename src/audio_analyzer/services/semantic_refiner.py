@@ -389,13 +389,11 @@ class SemanticRefiner:
         if settings.enable_micro_utterance_rule:
             for i in range(len(utterances)):
                 orig_curr = utterances[i]
-                duration = orig_curr.end_time - orig_curr.start_time
                 clean_txt = orig_curr.text.strip()
+                clean_txt_no_punct = re.sub(r'[\s\?\.\!\,\:\;\…\-\–]+', '', clean_txt)
+                is_pure_punct = len(clean_txt_no_punct) == 0
 
-                is_pure_punct = clean_txt in ("?", ".", "!", "...", "") or len(clean_txt) <= 2
-                is_ultra_short = duration < 0.35
-
-                if is_pure_punct or is_ultra_short:
+                if is_pure_punct:
                     target_spk = None
                     if i > 0:
                         target_spk = utterances[i - 1].speaker_id

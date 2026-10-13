@@ -5,7 +5,9 @@ from audio_analyzer.domain.models import TranscriptUtterance
 from audio_analyzer.services.semantic_refiner import SemanticRefiner
 
 
-def test_semantic_refiner_smoothes_orphan_and_sandwich_speakers():
+def test_semantic_refiner_smoothes_orphan_and_sandwich_speakers(monkeypatch):
+    monkeypatch.setenv("ENABLE_MICRO_UTTERANCE_RULE", "true")
+    monkeypatch.setenv("ENABLE_SANDWICH_RULE", "true")
     refiner = SemanticRefiner()
 
     u1 = TranscriptUtterance(id=uuid.uuid4(), speaker_id="SPEAKER_00", start_time=0.0, end_time=10.0, text="Merhaba hastaneyi arıyorum.")

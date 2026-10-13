@@ -81,3 +81,29 @@ def test_speaker_merger_with_embeddings():
 
     spk02_target = [s for s in merged if s.start_time >= 20.0][0]
     assert spk02_target.speaker_id == "SPEAKER_00"
+
+
+@pytest.mark.unit
+def test_speaker_merger_cancels_merge_when_similarity_below_threshold():
+    """Benzerlik eşiğin altındaysa birleştirmenin iptal edildiğini ve konuşmacının korunduğunu doğrular."""
+    segments = [
+        DiarizationSegment(speaker_id="SPEAKER_00", start_time=0.0, end_time=10.0),
+        DiarizationSegment(speaker_id="SPEAKER_01", start_time=10.0, end_time=20.0),
+        DiarizationSegment(speaker_id="SPEAKER_02", start_time=20.0, end_time=21.5),  # 1.5s < 3.0s
+    ]
+
+    # SPEAKER_02, SPEAKER_00 ve SPEAKER_01'e tamamen ortogonal ([0, 0, 1]) -> sim=0.0 < 0.50
+    embeddings = {
+        "SPEAKER_00": np.array([1.0, 0.0, 0.0]),
+        "SPEAKER_01": np.array([0.0, 1.0, 0.0]),
+        "SPEAKER_02": np.array([0.0, 0.0, 1.0]),
+    }
+
+    merger = SpeakerClusterMerger(min_speaker_sec=3.0, min_speaker_ratio=0.05, similarity_threshold=0.50)
+    merged = merger.merge(segments, speaker_embeddings=embeddings)
+
+    spk_ids = set(s.speaker_id for s in merged)
+    # Düşük benzerlik sebebiyle SPEAKER_02 yutulmamalı, korunmalı!
+    assert "SPEAKER_02" in spk_ids
+    assert len(spk_ids) == 3
+

@@ -26,6 +26,7 @@ class SpeakerClusterMerger:
         self,
         min_speaker_sec: float | None = None,
         min_speaker_ratio: float | None = None,
+        similarity_threshold: float | None = None,
     ):
         from audio_analyzer.config import get_settings
         settings = get_settings()
@@ -35,6 +36,11 @@ class SpeakerClusterMerger:
         )
         self.min_speaker_ratio = (
             min_speaker_ratio if min_speaker_ratio is not None else settings.min_speaker_ratio
+        )
+        self.similarity_threshold = (
+            similarity_threshold
+            if similarity_threshold is not None
+            else getattr(settings, "merger_similarity_threshold", 0.50)
         )
 
     def merge(
@@ -100,8 +106,9 @@ class SpeakerClusterMerger:
 
         # 3. Yeniden atama (Embedding vs Zamansal Yakınlık)
         spk_target_map: dict[str, str] = {}
+        cancelled_merges: set[str] = set()
         if speaker_embeddings:
-            for small_spk in small_speakers:
+            for small_spk in list(small_speakers):
                 if small_spk in speaker_embeddings:
                     s_emb = speaker_embeddings[small_spk]
                     s_norm = s_emb / (np.linalg.norm(s_emb) + 1e-12)
@@ -115,8 +122,45 @@ class SpeakerClusterMerger:
                             if sim > best_sim:
                                 best_sim = sim
                                 best_maj = maj_spk
-                    if best_maj:
-                        spk_target_map[small_spk] = best_maj
+                    if best_maj is not None:
+                        if best_sim < self.similarity_threshold:
+                            logger.info(
+                                "SpeakerClusterMerger: Konuşmacı '%s' (%.2fs) en yakın konuşmacı '%s' ile düşük benzerlik gösterdi (%.2f < %.2f). Birleştirme İPTAL EDİLDİ ve bağımsız konuşmacı olarak korundu.",
+                                small_spk,
+                                spk_durations.get(small_spk, 0.0),
+                                best_maj,
+                                best_sim,
+                                self.similarity_threshold,
+                            )
+                            cancelled_merges.add(small_spk)
+                        else:
+                            logger.info(
+                                "SpeakerClusterMerger: Konuşmacı '%s' (%.2fs) -> '%s' ile birleştirildi (benzerlik: %.2f >= %.2f).",
+                                small_spk,
+                                spk_durations.get(small_spk, 0.0),
+                                best_maj,
+                                best_sim,
+                                self.similarity_threshold,
+                            )
+                            spk_target_map[small_spk] = best_maj
+
+        small_speakers = small_speakers - cancelled_merges
+        if not small_speakers:
+            return segments
+
+        for small_spk in list(small_speakers):
+            if small_spk not in spk_target_map:
+                spk_segs = [s for s in segments if s.speaker_id == small_spk]
+                if spk_segs:
+                    ref_seg = max(spk_segs, key=lambda s: s.end_time - s.start_time)
+                    target_maj = self._find_nearest_major_speaker(ref_seg, major_segments)
+                    spk_target_map[small_spk] = target_maj
+                    logger.info(
+                        "SpeakerClusterMerger: Konuşmacı '%s' (%.2fs) zamansal yakınlık ile '%s' ile birleştirildi.",
+                        small_spk,
+                        spk_durations.get(small_spk, 0.0),
+                        target_maj,
+                    )
 
         new_segments: list[DiarizationSegment] = []
         for s in segments:

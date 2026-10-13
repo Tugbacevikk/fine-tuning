@@ -123,7 +123,7 @@ class Settings:
     diarization_escalation: str = field(default_factory=lambda: os.getenv("DIARIZATION_ESCALATION", "off").lower())
     diarization_step_sec: float = field(default_factory=lambda: float(os.getenv("DIARIZATION_STEP_SEC", "0.3")))
     diarization_threshold: float = field(default_factory=lambda: float(os.getenv("DIARIZATION_THRESHOLD", "0.55")))
-    sherpa_cluster_threshold: float = field(default_factory=lambda: float(os.getenv("SHERPA_CLUSTER_THRESHOLD", "0.60")))
+    sherpa_cluster_threshold: float = field(default_factory=lambda: float(os.getenv("SHERPA_CLUSTER_THRESHOLD", "0.55")))
     sherpa_embedding_model: str = field(
         default_factory=lambda: os.getenv(
             "SHERPA_EMBEDDING_MODEL", "wespeaker_en_voxceleb_resnet34_LM.onnx"
@@ -170,7 +170,10 @@ class Settings:
         default_factory=lambda: float(os.getenv("MIN_SPEAKER_SEC", "3.0"))
     )
     min_speaker_ratio: float = field(
-        default_factory=lambda: float(os.getenv("MIN_SPEAKER_RATIO", "0.05"))
+        default_factory=lambda: float(os.getenv("MIN_SPEAKER_RATIO", "0.0"))
+    )
+    merger_similarity_threshold: float = field(
+        default_factory=lambda: float(os.getenv("MERGER_SIMILARITY_THRESHOLD", "0.50"))
     )
     enable_smooth_words: bool = field(
         default_factory=lambda: os.getenv("ENABLE_SMOOTH_WORDS", "false").lower() == "true"
@@ -179,13 +182,13 @@ class Settings:
         default_factory=lambda: os.getenv("BIND_SHORT_TURNS", "true").lower() == "true"
     )
     enable_sandwich_rule: bool = field(
-        default_factory=lambda: os.getenv("ENABLE_SANDWICH_RULE", "true").lower() == "true"
+        default_factory=lambda: os.getenv("ENABLE_SANDWICH_RULE", "false").lower() == "true"
     )
     sandwich_max_duration_sec: float = field(
         default_factory=lambda: float(os.getenv("SANDWICH_MAX_DURATION_SEC", "0.8"))
     )
     enable_micro_utterance_rule: bool = field(
-        default_factory=lambda: os.getenv("ENABLE_MICRO_UTTERANCE_RULE", "true").lower() == "true"
+        default_factory=lambda: os.getenv("ENABLE_MICRO_UTTERANCE_RULE", "false").lower() == "true"
     )
 
     # 5. SemanticRefiner & Yerel LLM

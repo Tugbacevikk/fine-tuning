@@ -44,3 +44,8 @@ class EscalatingDiarizer(IDiarizer):
                 return res
 
         return self.primary_diarizer.diarize(audio_input, num_speakers=num_speakers)
+
+    def extract_speaker_embeddings(self, audio_input: object, segments: list) -> dict:
+        if hasattr(self.primary_diarizer, "extract_speaker_embeddings"):
+            return self.primary_diarizer.extract_speaker_embeddings(audio_input, segments)
+        return {}

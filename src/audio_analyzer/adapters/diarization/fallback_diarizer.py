@@ -55,3 +55,13 @@ class FallbackDiarizer(IDiarizer):
 
         logger.error("Tüm diarization motorları (fallback dahil) başarısız oldu veya boş döndü.")
         return []
+
+    @property
+    def primary_diarizer(self) -> IDiarizer:
+        return self.primary
+
+    def extract_speaker_embeddings(self, audio_input: object, segments: list) -> dict:
+        target = getattr(self, "primary", None) or getattr(self, "primary_diarizer", None)
+        if target and hasattr(target, "extract_speaker_embeddings"):
+            return target.extract_speaker_embeddings(audio_input, segments)
+        return {}

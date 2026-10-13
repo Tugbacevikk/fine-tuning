@@ -313,7 +313,15 @@ class AudioAnalysisPipeline:
         if diarization_segments:
             from audio_analyzer.services.speaker_merger import SpeakerClusterMerger
             merger = SpeakerClusterMerger()
-            diarization_segments = merger.merge(diarization_segments, num_speakers=num_speakers)
+            spk_embs = {}
+            if hasattr(self.diarizer, "extract_speaker_embeddings"):
+                try:
+                    spk_embs = self.diarizer.extract_speaker_embeddings(audio_input, diarization_segments)
+                except Exception as emb_e:
+                    logger.warning("Konuşmacı embedding çıkarımı atlandı: %s", emb_e)
+            diarization_segments = merger.merge(
+                diarization_segments, num_speakers=num_speakers, speaker_embeddings=spk_embs
+            )
 
         total_duration = audio_duration
         if total_duration <= 0.0:
