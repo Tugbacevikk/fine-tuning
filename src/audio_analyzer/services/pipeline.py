@@ -233,6 +233,7 @@ class AudioAnalysisPipeline:
 
         # 3. VAD İşleme
         speech_timestamps: list[tuple[float, float]] | None = None
+        stt_has_vad = getattr(self.stt_engine, "has_vad_filter", True)
         enable_vad_filter = settings.enable_vad_filter
         if enable_vad_filter and self.vad_processor and (vad_engine == "silero" or not stt_has_vad):
             t0 = time.monotonic()
@@ -307,8 +308,6 @@ class AudioAnalysisPipeline:
             merger = SpeakerClusterMerger()
             diarization_segments = merger.merge(diarization_segments, num_speakers=num_speakers)
 
-        # 6. Overlap Detection
-        t0 = time.monotonic()
         total_duration = audio_duration
         if total_duration <= 0.0:
             if words:
@@ -316,9 +315,35 @@ class AudioAnalysisPipeline:
             elif diarization_segments:
                 total_duration = max(s.end_time for s in diarization_segments)
 
+        # 5c. Transkriptsiz Konuşma Tespiti (Speech Gap Detection)
+        from audio_analyzer.services.speech_gap_detector import detect_untranscribed_speech
+        untranscribed_speech = detect_untranscribed_speech(diarization_segments, words, min_gap_sec=2.0)
+
+        # 5d. STT Güvenlik Ağı (Safety Net)
+        if settings.enable_stt_safety_net and untranscribed_speech:
+            words = self._rescue_untranscribed_speech(
+                audio_input, words, untranscribed_speech, total_duration
+            )
+            # Kurtarma sonrasında transkriptsiz konuşma listesini güncelle
+            untranscribed_speech = detect_untranscribed_speech(diarization_segments, words, min_gap_sec=2.0)
+
+        if untranscribed_speech:
+            total_untranscribed_dur = sum(s.duration for s in untranscribed_speech)
+            logger.warning(
+                "Transkriptsiz konuşma tespit edildi: %d aralık, toplam %.2f sn. Detay: %s",
+                len(untranscribed_speech),
+                round(total_untranscribed_dur, 2),
+                [(s.start_time, s.end_time, s.duration) for s in untranscribed_speech],
+            )
+
+        # 6. Overlap Detection
+        t0 = time.monotonic()
         overlap_summary = OverlapDetector.detect_overlaps(
             diarization_segments=diarization_segments, total_audio_duration=total_duration
         )
+        overlap_summary.untranscribed_speech = untranscribed_speech
+        overlap_summary.untranscribed_speech_count = len(untranscribed_speech)
+        overlap_summary.untranscribed_speech_seconds = round(sum(s.duration for s in untranscribed_speech), 2)
         STAGE_DURATION_HISTOGRAM.labels(stage="overlap_detection").observe(time.monotonic() - t0)
 
         # 7. FusionEngine
@@ -363,3 +388,89 @@ class AudioAnalysisPipeline:
         from audio_analyzer.domain.models import DiarizationSegment
         end_t = audio_duration if audio_duration > 0 else DEFAULT_UNBOUNDED_AUDIO_DURATION
         return [DiarizationSegment(speaker_id="SPEAKER_00", start_time=0.0, end_time=end_t)]
+
+    def _rescue_untranscribed_speech(
+        self,
+        audio_input: str | np.ndarray,
+        words: list,
+        untranscribed: list,
+        total_duration: float,
+    ) -> list:
+        """
+        2 sn'den uzun transkriptsiz konuşma aralıklarını (±0.5 sn marjla)
+        tekrar Whisper modelinden geçirerek kelimeleri kurtarır.
+        """
+        if not untranscribed:
+            return words
+
+        recovered_any = False
+        rescued_intervals_count = 0
+        total_rescued_words = 0
+
+        for gap in untranscribed:
+            slice_start = max(0.0, gap.start_time - 0.5)
+            slice_end = min(total_duration, gap.end_time + 0.5) if total_duration > 0 else (gap.end_time + 0.5)
+            if (slice_end - slice_start) < 1.0:
+                continue
+
+            try:
+                if isinstance(audio_input, np.ndarray):
+                    sr = 16000
+                    s_idx = int(slice_start * sr)
+                    e_idx = int(slice_end * sr)
+                    chunk = audio_input[s_idx:e_idx]
+                else:
+                    info = sf.info(audio_input)
+                    sr = info.samplerate
+                    s_idx = int(slice_start * sr)
+                    e_idx = int(slice_end * sr)
+                    audio_data, file_sr = sf.read(audio_input, start=s_idx, stop=e_idx, dtype="float32")
+                    if audio_data.ndim > 1:
+                        audio_data = audio_data.mean(axis=1)
+                    if file_sr != 16000:
+                        g = gcd(int(file_sr), 16000)
+                        audio_data = scipy.signal.resample_poly(audio_data, 16000 // g, int(file_sr) // g)
+                    chunk = audio_data
+
+                if len(chunk) < 8000:  # < 0.5 sn
+                    continue
+
+                slice_words, _ = self.stt_engine.transcribe(chunk)
+                valid_rescued = []
+                for w in slice_words:
+                    w_start = round(w.start_time + slice_start, 2)
+                    w_end = round(w.end_time + slice_start, 2)
+                    if w_start >= (slice_start - 0.2) and w_end <= (slice_end + 0.5):
+                        w.start_time = w_start
+                        w.end_time = w_end
+                        valid_rescued.append(w)
+
+                if valid_rescued:
+                    rescued_intervals_count += 1
+                    total_rescued_words += len(valid_rescued)
+                    words.extend(valid_rescued)
+                    recovered_any = True
+                    logger.info(
+                        "Güvenlik ağı: [%.2f - %.2f] aralığından %d kelime kurtarıldı: '%s'",
+                        slice_start,
+                        slice_end,
+                        len(valid_rescued),
+                        " ".join(w.word for w in valid_rescued[:6]),
+                    )
+            except Exception as rescue_err:
+                logger.warning(
+                    "Güvenlik ağı kurtarma hatası ([%.2f - %.2f]): %s",
+                    slice_start,
+                    slice_end,
+                    rescue_err,
+                )
+
+        if recovered_any:
+            words.sort(key=lambda w: w.start_time)
+            logger.info(
+                "STT Güvenlik Ağı tamamlandı: %d aralık kurtarıldı, toplam %d kelime geri kazanıldı.",
+                rescued_intervals_count,
+                total_rescued_words,
+            )
+
+        return words

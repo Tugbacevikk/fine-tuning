@@ -77,6 +77,21 @@ class FasterWhisperAdapter(ISTTEngine):
         hotwords_raw = os.getenv("WHISPER_HOTWORDS", "").strip() or settings.whisper_hotwords
         hotwords_val = hotwords_raw if hotwords_raw else None
 
+        log_prob_th = settings.whisper_log_prob_threshold
+        no_speech_th = settings.whisper_no_speech_threshold
+        if settings.whisper_temperature_fallback:
+            temperature_val: float | tuple[float, ...] = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
+        else:
+            temperature_val = 0.0
+
+        custom_temp_env = os.getenv("WHISPER_TEMPERATURE")
+        if custom_temp_env:
+            parts = [p.strip() for p in custom_temp_env.split(",") if p.strip()]
+            if len(parts) > 1:
+                temperature_val = tuple(float(p) for p in parts)
+            elif len(parts) == 1:
+                temperature_val = float(parts[0])
+
         use_batched = self._batched_model is not None and use_vad_filter
         if use_batched:
             try:
@@ -89,12 +104,12 @@ class FasterWhisperAdapter(ISTTEngine):
                     word_timestamps=True,
                     beam_size=beam_size,
                     condition_on_previous_text=False,
-                    temperature=0.0,
+                    temperature=temperature_val,
                     repetition_penalty=1.2,
                     no_repeat_ngram_size=3,
-                    no_speech_threshold=0.6,
+                    no_speech_threshold=no_speech_th,
                     compression_ratio_threshold=2.4,
-                    log_prob_threshold=None,
+                    log_prob_threshold=log_prob_th,
                     vad_filter=True,
                     vad_parameters=vad_params if use_vad_filter else None,
                 )
@@ -111,18 +126,20 @@ class FasterWhisperAdapter(ISTTEngine):
                 word_timestamps=True,
                 beam_size=beam_size,
                 condition_on_previous_text=False,
-                temperature=0.0,
+                temperature=temperature_val,
                 repetition_penalty=1.2,
                 no_repeat_ngram_size=3,
-                no_speech_threshold=0.6,
+                no_speech_threshold=no_speech_th,
                 compression_ratio_threshold=2.4,
-                log_prob_threshold=None,
+                log_prob_threshold=log_prob_th,
                 vad_filter=use_vad_filter,
                 vad_parameters=vad_params if use_vad_filter else None,
             )
 
         words: list[WordSegment] = []
         last_clean_words: list[str] = []
+        dropped_repeat_words = 0
+        dropped_samples: list[str] = []
 
         for segment in segments:
             if hasattr(segment, "words") and segment.words:
@@ -130,6 +147,9 @@ class FasterWhisperAdapter(ISTTEngine):
                     clean_w = w.word.strip().lower()
                     # Ardışık 3'ten fazla kelime tekrarı döngüsünü filtrele
                     if len(last_clean_words) >= 2 and clean_w == last_clean_words[-1] == last_clean_words[-2]:
+                        dropped_repeat_words += 1
+                        if len(dropped_samples) < 5:
+                            dropped_samples.append(w.word.strip())
                         continue
                     last_clean_words.append(clean_w)
                     if len(last_clean_words) > 10:
@@ -143,6 +163,13 @@ class FasterWhisperAdapter(ISTTEngine):
                             probability=w.probability if hasattr(w, "probability") else 1.0,
                         )
                     )
+
+        if dropped_repeat_words > 0:
+            logger.info(
+                "FasterWhisper 3+ ardışık tekrar filtresi: %d kelime elendi (Örnekler: %s)",
+                dropped_repeat_words,
+                dropped_samples,
+            )
 
         detected_language = info.language if info and hasattr(info, "language") else None
         return words, detected_language

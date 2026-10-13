@@ -111,7 +111,9 @@ class SemanticRefiner:
         if not text:
             return text
 
-        words = text.strip().split()
+        orig_text = text
+        orig_words = text.strip().split()
+        words = list(orig_words)
         if not words:
             return text
 
@@ -167,6 +169,16 @@ class SemanticRefiner:
                     cleaned_parts.extend(parts[i:j])
                 i = j
             text = ", ".join(cleaned_parts)
+
+        final_words = text.strip().split()
+        if len(orig_words) > len(final_words):
+            deleted_count = len(orig_words) - len(final_words)
+            logger.info(
+                "_clean_repetitive_text: %d tekrarlı kelime temizlendi (Orijinal: '%s' -> Temizlenmiş: '%s')",
+                deleted_count,
+                orig_text,
+                text,
+            )
 
         return text
 

@@ -28,7 +28,7 @@ from audio_analyzer.api.dependencies import get_repository, get_uow
 from audio_analyzer.api.rate_limiter import rate_limiter
 from audio_analyzer.config import get_settings
 from audio_analyzer.domain.interfaces import ITranscriptRepository
-from audio_analyzer.domain.models import OverlapSummary, TranscriptUtterance
+from audio_analyzer.domain.models import OverlapSummary, TranscriptUtterance, UntranscribedSpeechSegment
 from audio_analyzer.services.job_service import JobService
 from audio_analyzer.utils.file_validator import is_valid_audio_content
 
@@ -111,6 +111,7 @@ class JobStatusResponse(BaseModel):
     overlap_summary: OverlapSummary | None = None
     utterances: list[UtteranceResponse] = []
     created_at: str | None = None
+    untranscribed_speech: list[UntranscribedSpeechSegment] = []
 
 
 class UtteranceUpdateRequest(BaseModel):
@@ -275,6 +276,10 @@ async def list_jobs(
             ],
             overlap_summary=r.overlap_summary,
             created_at=r.created_at.isoformat() if hasattr(r, "created_at") and r.created_at else None,
+            untranscribed_speech=(
+                r.untranscribed_speech if getattr(r, "untranscribed_speech", None)
+                else (r.overlap_summary.untranscribed_speech if r.overlap_summary and getattr(r.overlap_summary, "untranscribed_speech", None) else [])
+            ),
         )
         for r in records
     ]
@@ -310,6 +315,11 @@ async def get_job_status(
         for u in record.utterances
     ]
 
+    untranscribed = (
+        record.untranscribed_speech if getattr(record, "untranscribed_speech", None)
+        else (record.overlap_summary.untranscribed_speech if record.overlap_summary and getattr(record.overlap_summary, "untranscribed_speech", None) else [])
+    )
+
     return JobStatusResponse(
         job_id=str(record.id),
         file_name=record.file_name,
@@ -319,6 +329,7 @@ async def get_job_status(
         overlap_summary=record.overlap_summary,
         utterances=utterances,
         created_at=record.created_at.isoformat() if hasattr(record, "created_at") and record.created_at else None,
+        untranscribed_speech=untranscribed,
     )
 
 

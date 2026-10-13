@@ -17,6 +17,19 @@ def _opt_int(name: str) -> int | None:
         return None
 
 
+def _opt_float(name: str, default: float | None = None) -> float | None:
+    val = os.getenv(name)
+    if val is None:
+        return default
+    val_clean = val.strip().lower()
+    if val_clean in ("", "none", "null"):
+        return None
+    try:
+        return float(val_clean)
+    except ValueError:
+        return default
+
+
 def _get_whisper_beam_size() -> int:
     env_val = os.getenv("WHISPER_BEAM_SIZE")
     if env_val:
@@ -75,6 +88,18 @@ class Settings:
     whisper_batch_size: int = field(default_factory=lambda: int(os.getenv("WHISPER_BATCH_SIZE", "8")))
     whisper_hotwords: str = field(default_factory=lambda: os.getenv("WHISPER_HOTWORDS", "").strip())
     whisper_language: str = field(default_factory=lambda: os.getenv("WHISPER_LANGUAGE", "tr"))
+    whisper_log_prob_threshold: float | None = field(
+        default_factory=lambda: _opt_float("WHISPER_LOG_PROB_THRESHOLD", -1.0)
+    )
+    whisper_no_speech_threshold: float = field(
+        default_factory=lambda: float(os.getenv("WHISPER_NO_SPEECH_THRESHOLD", "0.6"))
+    )
+    whisper_temperature_fallback: bool = field(
+        default_factory=lambda: os.getenv("WHISPER_TEMPERATURE_FALLBACK", "true").lower() == "true"
+    )
+    enable_stt_safety_net: bool = field(
+        default_factory=lambda: os.getenv("ENABLE_STT_SAFETY_NET", "true").lower() == "true"
+    )
     worker_cpu_threads: int = field(default_factory=lambda: int(os.getenv("WORKER_CPU_THREADS", "4")))
     diarization_engine: str = field(default_factory=lambda: os.getenv("DIARIZATION_ENGINE", "sherpa_onnx").lower())
     diarization_escalation: str = field(default_factory=lambda: os.getenv("DIARIZATION_ESCALATION", "off").lower())

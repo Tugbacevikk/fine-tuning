@@ -97,6 +97,15 @@ class OverlapSegment(BaseModel):
     duration: float
 
 
+class UntranscribedSpeechSegment(BaseModel):
+    """Whisper tarafindan transkript edilmemis konusma araligi."""
+
+    start_time: float
+    end_time: float
+    duration: float
+    speaker_id: str | None = None
+
+
 class OverlapSummary(BaseModel):
     """Konuşma çakışması ve kalite kontrol metrik özeti."""
 
@@ -105,6 +114,9 @@ class OverlapSummary(BaseModel):
     overlap_percentage: float = 0.0
     interrupt_count: int = 0
     overlaps: list[OverlapSegment] = Field(default_factory=list)
+    untranscribed_speech_seconds: float = 0.0
+    untranscribed_speech_count: int = 0
+    untranscribed_speech: list[UntranscribedSpeechSegment] = Field(default_factory=list)
 
 
 class AudioRecord(BaseModel):
@@ -126,6 +138,7 @@ class AudioRecord(BaseModel):
     processing_started_at: datetime | None = None
     last_error_at: datetime | None = None
     overlap_summary: OverlapSummary | None = None
+    untranscribed_speech: list[UntranscribedSpeechSegment] = Field(default_factory=list)
     num_speakers: int | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
