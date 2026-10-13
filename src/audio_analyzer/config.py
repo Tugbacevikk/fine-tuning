@@ -104,7 +104,7 @@ class Settings:
     model_dir: str = field(
         default_factory=lambda: os.getenv("MODEL_DIR", "storage/models")
     )
-    whisper_model_size: str = field(default_factory=lambda: os.getenv("WHISPER_MODEL_SIZE", "small"))
+    whisper_model_size: str = field(default_factory=lambda: os.getenv("WHISPER_MODEL_SIZE", "medium"))
     whisper_beam_size: int = field(default_factory=_get_whisper_beam_size)
     whisper_batch_size: int = field(default_factory=lambda: int(os.getenv("WHISPER_BATCH_SIZE", "8")))
     whisper_hotwords: str = field(default_factory=lambda: os.getenv("WHISPER_HOTWORDS", "").strip())

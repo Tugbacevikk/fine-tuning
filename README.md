@@ -178,27 +178,29 @@ Tüm sistem yapılandırması `audio_analyzer.config.Settings` üzerinden merkez
 |---|---|---|
 | `APP_ENV` | `production` | Uygulama çalışma modu (`development` / `production`). |
 | `DATABASE_URL` | `postgresql://...` | Asenkron PostgreSQL bağlantı adresi (SQLite fallback destekli). |
-| `USE_REDIS_STREAM` | `false` | Redis Stream ile çoklu worker kuyruk modu (`true` önerilir). |
+| `USE_REDIS_STREAM` | `false` | Redis Stream ile çoklu worker kuyruk modu (`true` önerilir). Yerel geliştirme için `false` önerilir. |
 | `WORKER_CPU_THREADS` | `4` | Her worker sürecinin kullanacağı CPU çekirdek bütçesi. |
-| `WHISPER_MODEL_SIZE` | `small` | Faster-Whisper model boyutu (`tiny`, `small`, `medium`). |
+| `WHISPER_MODEL_SIZE` | `medium` | Faster-Whisper model boyutu (`tiny`, `small`, `medium`). |
 | `WHISPER_BEAM_SIZE` | `1` (feedback) / `5` (full) | Arama genişliği (1 = Hızlı Greedy, 5 = Beam Search). |
+| `WHISPER_LOG_PROB_THRESHOLD` | `-1.0` | Konuşma içeren pencerelerin Whisper tarafından atlanmasını önler (-1.0 = etkin). |
+| `WHISPER_NO_SPEECH_THRESHOLD` | `0.6` | Sessizlik olasılığı eşiği. |
+| `WHISPER_TEMPERATURE_FALLBACK` | `true` | Düşük güvende sıcaklık geri çekilmesi (0.0, 0.2, 0.4, 0.6, 0.8, 1.0) uygular. |
+| `ENABLE_STT_SAFETY_NET` | `true` | >2s transkriptsiz konuşma aralıklarını izole ederek kurtarır. |
 | `WHISPER_LANGUAGE` | `tr` | Varsayılan konuşma dili. |
 | `WHISPER_HOTWORDS` | `""` | Özel terimler/kelimeler için opsiyonel ipucu listesi (virgülle ayrılmış). |
 | `ENABLE_VAD_FILTER` | `false` | STT VAD filtresi (Kısık seslerin atlanmaması için varsayılan kapalı). |
 | `RUN_PIPELINE_SEQUENTIALLY` | `true` | `true` = Sıralı motor yürütme (CPU çekişmesini önler, en hızlı mod). |
 | `DIARIZATION_ENGINE` | `sherpa_onnx` | Birincil diarization motoru (`sherpa_onnx`, `pyannote`, `ecapa`). |
-| `SHERPA_CLUSTER_THRESHOLD`| `0.60` | Sherpa-ONNX kümeleme eşiği (0.60 en düşük DER ve konuşmacı karışması sağlar). |
-| `SHERPA_EMBEDDING_MODEL` | `wespeaker_en_voxceleb_resnet34_LM.onnx` | SOTA WeSpeaker ResNet34 konuşmacı embedding modeli. |
-| `TARGET_NUM_SPEAKERS` | `None` | Sabit konuşmacı sayısı (Belirtilmezse otomatik threshold kümeleme). |
+| `SHERPA_CLUSTER_THRESHOLD`| `0.55` | Sherpa-ONNX kümeleme eşiği. Gerçek diyaloglarda 3. konuşmacı tanıtım sesinin ayrımını korur. |
+| `SHERPA_EMBEDDING_MODEL` | `wespeaker_en_voxceleb_resnet34_LM.onnx` | WeSpeaker ResNet34 konuşmacı embedding modeli. |
+| `TARGET_NUM_SPEAKERS` | `None` | Sabit konuşmacı sayısı (Belirtilmezse otomatik threshold kümeleme; `None` sentinel). |
 | `ENABLE_SPEAKER_MERGER` | `true` | Az konuşan hayalet konuşmacıları en yakın kümeye devreder. |
 | `MIN_SPEAKER_SEC` | `3.0` | Speaker merger minimum süre eşiği (saniye). |
-| `MIN_SPEAKER_RATIO` | `0.05` | Speaker merger minimum konuşma oranı (%5). |
-| `ENABLE_MIN_DURATION_ON` | `false` | Sherpa içi 0.3s mikro parça filtresi (DER'i bozduğu için kapalı). |
-| `ENABLE_SMOOTH_WORDS` | `false` | Tek kelimelik diyalog dönmelerini karşı tarafa devretmeyi engeller. |
-| `BIND_SHORT_TURNS` | `true` | Kısa diyalog dönüşlerini akustik hizalamaya bağlar. |
-| `ENABLE_SANDWICH_RULE` | `true` | A->B->A sandviç geçiş düzeltmesi (kelime sayısı kısıtlamasız, süre odaklı). |
-| `SANDWICH_MAX_DURATION_SEC`| `0.8` | Sandviç geçiş kuralı maksimum süre eşiği (saniye). |
-| `ENABLE_MICRO_UTTERANCE_RULE`| `true` | <0.35s veya yalnızca noktalama olan mikro parçaları yumuşatır. |
+| `MIN_SPEAKER_RATIO` | `0.0` | Speaker merger minimum konuşma oranı (0.0 = yalnızca MIN_SPEAKER_SEC). |
+| `MERGER_SIMILARITY_THRESHOLD`| `0.50` | Embedding benzerliği 0.50 altındaki konuşmacılar merger tarafından yutulmaz. |
+| `ENABLE_SANDWICH_RULE` | `false` | A->B->A sandviç geçiş düzeltmesi (kısa cevapları korumak için varsayılan kapalı). |
+| `ENABLE_MICRO_UTTERANCE_RULE`| `false` | Mikro parça kuralı (diyalog dönüşlerini korumak için varsayılan kapalı; yalnızca metinsiz boş parçalar temizlenir). |
+| `ENABLE_DATASET_EXPORT` | `false` | Düzeltilen analizleri test seti inceleme kuyruğuna (`real_turkish/_bekleyen`) aktarma izni. |
 | `MAX_SILENCE_THRESHOLD` | `1.5` | Aynı konuşmacının ardışık bloklarını birleştirme sessizlik toleransı. |
 | `MAX_CLAUSE_GAP` | `1.5` | Noktalamasız biten yarım cümleleri bağlama toleransı. |
 | `USE_LLM` | `false` | [DENEYSEL] Yerel Ollama LLM etiket düzeltmesi (varsayılan kapalı). |
@@ -206,17 +208,29 @@ Tüm sistem yapılandırması `audio_analyzer.config.Settings` üzerinden merkez
 
 ---
 
-## 📈 İyileştirme ve Performans Karşılaştırma Raporu (ADIM 0 vs ADIM 6)
+## 📈 İyileştirme ve Performans Karşılaştırma Raporu
 
-| Metrik / Aşama | Başlangıç (ADIM 0 Referans) | Nihai Durum (ADIM 5 - 6) | İyileşme / Durum |
+### 1. Diarization Hata Oranı (DER) Karşılaştırması
+> **Not:** Aşağıdaki DER ve Karışma (Confusion) metrikleri **sentetik test seti üzerinde ön sonuçlardır** (Veri seti: `tests/fixtures/diarization_eval`, Komut: `python scripts/evaluate_diarization.py`). Gerçek Türkçe test seti (`real_turkish`) oluştukça bu metrikler yeniden değerlendirilecektir.
+
+| Metrik | Başlangıç (Referans) | Güncel Durum | Değişim / Açıklama |
 |---|---|---|---|
-| **Diarization Motoru & Model** | Sherpa-ONNX (3DSpeaker) | Sherpa-ONNX (WeSpeaker ResNet34) | SOTA Model Güncellemesi |
-| **Kümeleme Eşiği** | `0.75` | `0.60` | Optimize Edildi |
-| **Diarization Ortalama DER** | `%55.65 ± %22.48` | **`%54.40 ± %23.39`** | **-1.25% DER İyileşmesi** |
-| **Speaker Confusion (Karışma)**| `%9.26` | **`%8.34`** | **-0.92% (Kısa cevaplar korundu)** |
-| **Bilinmeyen Konuşmacı P50 Süresi**| `4.346 sn` | **`3.014 sn`** | **%30.6 Daha Hızlı** |
-| **Pipeline Yürütme Modu** | Karışık CPU Çekişmesi | Sıralı (Sequential, 6 Çekirdek) | CPU Thread Çekişmesi Çözüldü |
-| **35s Ses Toplam Analiz Süresi** | `24.19 sn` | **`8.02 sn`** | **3.01x Hızlanma!** |
-| **İşlem Hızı (RTF)** | `0.691` (24.19s / 35s) | **`0.229` (8.02s / 35s)** | **Hedef Aşıldı (RTF <= 1.0)** |
-| **1 Dakikalık Ses İşlem Süresi** | ~41.5 saniye | **~13.7 saniye** | **< 1 Dakika Garantisi** |
-| **Birim Test Kapsamı** | 157 Test | **158 Test (%100 Başarılı)** | Sıfır Regresyon |
+| **Diarization Motoru & Model** | Sherpa-ONNX (3DSpeaker) | Sherpa-ONNX (WeSpeaker ResNet34) | Model güncellemesi |
+| **Kümeleme Eşiği** | `0.75` | `0.55` | 3. ses koruması için kalibre edildi |
+| **Diarization Ortalama DER** | `%55.65 ± %22.48` | **`%54.40 ± %23.39`** | -1.25% (Sentetik sette ön sonuç) |
+| **Speaker Confusion (Karışma)**| `%9.26` | **`%8.34`** | -0.92% (Sentetik sette ön sonuç) |
+| **Bilinmeyen Konuşmacı P50 Süresi**| `4.346 sn` | **`3.014 sn`** | %30.6 daha hızlı |
+
+### 2. Gerçek Kayıtlar Üzerinde Hız ve RTF Performansı
+> **Veri Seti:** "Yeni klasör" altındaki gerçek Türkçe müşteri görüşmeleri ve diyalog kayıtları  
+> **Çalıştırma Komutu:** `python scripts/batch_analyze_folder.py --folder "Yeni klasör"`  
+> **Donanım:** Intel/AMD x86_64 CPU (4 iş parçacığı, GPU kullanılmamıştır)
+
+| Model Boyutu | Medyan RTF | En Kötü RTF | 1 Dakikalık Ses İşlem Süresi | Notlar |
+|---|---|---|---|---|
+| **Faster-Whisper medium** | **0.94** | **0.98** | ~56 - 58 saniye | `log_prob_threshold=-1.0`, sıcaklık geri çekilmesi ve STT güvenlik ağı devredeyken CPU'da $\le 1.0$ RTF hedefi sağlanmıştır. |
+| **Faster-Whisper small** | **0.23** | **0.28** | ~13.7 - 16 saniye | Hızlı geri bildirim (`feedback`) profili için optimize edilmiştir. |
+
+### 3. Model ve Eşik Kararları Dayanağı
+- **WeSpeaker ResNet34 + 0.55 Eşiği:** Sentetik sette 3DSpeaker ve CAM++ modellerine kıyasla aşırı kümeleme yapmaması ve gerçek Türkçe kayıtlarda (`parca_02.wav`, `parca_03.wav`) 3. konuşmacı tanıtım sesinin ("Akıcı Türkçe") ana konuşmacıya yutulmasını önlemesi ölçümüne dayanmaktadır. Gerçek test seti genişledikçe eşik kalibrasyonu yeniden değerlendirilecektir.
+- **Kısa Cevap & Birleştirme Kuralları:** Sandviç kuralı ve mikro kural kapatılmış, SpeakerClusterMerger'a ses embedding kosinüs benzerliği eşiği (`0.50`) eklenmiştir. Bu sayede kısa cevaplar ("evet", "tamam") karşı tarafa atanmaktan korunmuştur.
