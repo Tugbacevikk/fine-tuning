@@ -11,6 +11,9 @@ env/
 
 # Storage & Databases
 storage/dev_database.db
+storage/*.db
+storage/*.db-wal
+storage/*.db-shm
 storage/raw/*
 !storage/raw/.gitkeep
 storage/processed/*
@@ -25,18 +28,28 @@ storage/models/*
 *.sqlite
 *.sqlite3
 
-# Audio Files & Temporary Data
+# Audio & Video Files & Temporary Data
 *.mp3
 *.wav
 *.m4a
 *.flac
 *.ogg
+*.opus
+*.webm
+*.mp4
+*.mkv
+*.aac
+*.wma
 !tests/fixtures/diarization_eval/*.wav
 !tests/fixtures/diarization_eval/*.rttm
 tests/fixtures/diarization_eval/large/
+tests/fixtures/diarization_eval/real_turkish/*
+!tests/fixtures/diarization_eval/real_turkish/.gitkeep
 scratch/
 analiz_sonuclari/
 **/analiz_sonuclari/
+*_analiz/
+**/*_sonuclari/
 recordings/
 kayitlar/
 *Yeni klasör*

@@ -1,7 +1,6 @@
 import logging
 import threading
 
-from audio_analyzer.adapters.audio.silero_vad import SileroVADProcessor
 from audio_analyzer.config import get_settings
 from audio_analyzer.domain.models import DeviceConfig
 from audio_analyzer.services.fusion_engine import FusionEngine
@@ -111,6 +110,7 @@ def _build_pipeline() -> AudioAnalysisPipeline:
 
     from audio_analyzer.adapters.audio.denoiser import DeepFilterDenoiser
     from audio_analyzer.adapters.audio.rust_dsp_adapter import RustAudioDSPProcessor
+    from audio_analyzer.adapters.audio.silero_vad import SileroVADProcessor
 
     audio_processor = RustAudioDSPProcessor()
     vad_processor = SileroVADProcessor()

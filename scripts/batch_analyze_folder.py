@@ -215,8 +215,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--folder",
         type=str,
-        default=r"C:\Users\ADIL CEVIK\Desktop\Yeni klasör",
-        help="Analiz edilecek ses dosyalarının bulunduğu klasör",
+        default=os.getenv("AUDIO_FOLDER", "Yeni klasör"),
+        help="Analiz edilecek ses dosyalarının bulunduğu klasör (AUDIO_FOLDER env veya argüman)",
     )
     parser.add_argument(
         "--output",

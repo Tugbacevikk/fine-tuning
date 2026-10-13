@@ -2,7 +2,6 @@ import logging
 
 import numpy as np
 import soundfile as sf
-import torch
 
 from audio_analyzer.domain.interfaces import IVADProcessor
 
@@ -64,6 +63,8 @@ class SileroVADProcessor(IVADProcessor):
 
         if self._model != "ENERGY_FALLBACK" and self._get_speech_timestamps_fn is not None:
             try:
+                import torch
+
                 wav_tensor = torch.tensor(data, dtype=torch.float32)
                 timestamps = self._get_speech_timestamps_fn(
                     wav_tensor,

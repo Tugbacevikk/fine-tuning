@@ -9,7 +9,7 @@ from audio_analyzer.services.job_service import JobService, sanitize_error_messa
 
 
 def test_sanitize_error_message_removes_file_paths():
-    ex = FileNotFoundError("No such file: C:\\Users\\ADIL CEVIK\\Desktop\\sesAnalizi\\storage\\raw\\test.wav")
+    ex = FileNotFoundError("No such file: C:\\Users\\testuser\\Desktop\\sesAnalizi\\storage\\raw\\test.wav")
     sanitized = sanitize_error_message(ex)
 
     assert "C:\\Users\\" not in sanitized
