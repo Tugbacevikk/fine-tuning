@@ -188,7 +188,10 @@ class JobService:
                 if num_speakers is not None:
                     res = await asyncio.to_thread(self.pipeline.process_bytes, file_bytes, num_speakers=num_speakers)
                 else:
-                    res = await asyncio.to_thread(self.pipeline.process_bytes, file_bytes)
+                    try:
+                        res = await asyncio.to_thread(self.pipeline.process_bytes, file_bytes, num_speakers=None)
+                    except TypeError:
+                        res = await asyncio.to_thread(self.pipeline.process_bytes, file_bytes)
             else:
                 local_path = await asyncio.to_thread(self.storage.get_path, record.storage_uri)
                 if (not local_path or not os.path.exists(local_path)) and not file_bytes:
@@ -212,9 +215,14 @@ class JobService:
                             self.pipeline.process, local_path, num_speakers=num_speakers
                         )
                     else:
-                        res = await asyncio.to_thread(
-                            self.pipeline.process, local_path
-                        )
+                        try:
+                            res = await asyncio.to_thread(
+                                self.pipeline.process, local_path, num_speakers=None
+                            )
+                        except TypeError:
+                            res = await asyncio.to_thread(
+                                self.pipeline.process, local_path
+                            )
                 finally:
                     if temp_local_file and os.path.exists(temp_local_file):
                         try:

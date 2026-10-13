@@ -27,6 +27,7 @@ from audio_analyzer.services.semantic_refiner import SemanticRefiner
 logger = logging.getLogger(__name__)
 
 DEFAULT_UNBOUNDED_AUDIO_DURATION: float = 1000.0
+_UNSET = object()
 
 
 def estimate_snr_db(audio_array: np.ndarray, sample_rate: int = 16000) -> float:
@@ -85,7 +86,7 @@ class AudioAnalysisPipeline:
         self.semantic_refiner = semantic_refiner or SemanticRefiner()
 
     def process(
-        self, audio_path: str, num_speakers: int | None = None
+        self, audio_path: str, num_speakers: int | None | object = _UNSET
     ) -> tuple[list[TranscriptUtterance], str | None, OverlapSummary]:
         """
         Ses dosyasını (MP3/WAV/FLAC vb.) analiz eder.
@@ -94,6 +95,9 @@ class AudioAnalysisPipeline:
         settings = get_settings()
         profile = settings.pipeline_profile
         min_snr_db = settings.pipeline_min_snr_db
+        effective_num_speakers = (
+            settings.target_num_speakers if num_speakers is _UNSET else num_speakers
+        )
 
         working_path = audio_path
         created_temp_files: list[str] = []
@@ -157,7 +161,7 @@ class AudioAnalysisPipeline:
             except Exception:
                 audio_duration = 0.0
 
-            return self._execute_pipeline(working_path, audio_duration, num_speakers=num_speakers)
+            return self._execute_pipeline(working_path, audio_duration, num_speakers=effective_num_speakers)
         finally:
             for tmp_file in created_temp_files:
                 if Path(tmp_file).exists():
@@ -167,7 +171,7 @@ class AudioAnalysisPipeline:
                         logger.warning("Geçici ses dosyası temizleme uyarısı: %s", cleanup_err)
 
     def process_bytes(
-        self, file_bytes: bytes, num_speakers: int | None = None
+        self, file_bytes: bytes, num_speakers: int | None | object = _UNSET
     ) -> tuple[list[TranscriptUtterance], str | None, OverlapSummary]:
         """
         0-Disk I/O: Ses dosyasını doğrudan RAM bellek üzerinden işler.
@@ -175,6 +179,9 @@ class AudioAnalysisPipeline:
         settings = get_settings()
         profile = settings.pipeline_profile
         min_snr_db = settings.pipeline_min_snr_db
+        effective_num_speakers = (
+            settings.target_num_speakers if num_speakers is _UNSET else num_speakers
+        )
 
         # 1. Ses Baytlarını RAM'de 16kHz Mono float32 NumPy dizisine çevir
         if self.audio_processor and hasattr(self.audio_processor, "convert_bytes_to_ndarray"):
@@ -214,7 +221,7 @@ class AudioAnalysisPipeline:
         # Pre-calculate audio duration directly from array before STT
         audio_duration = float(len(audio_array)) / 16000.0 if len(audio_array) > 0 else 0.0
 
-        return self._execute_pipeline(audio_array, audio_duration, num_speakers=num_speakers)
+        return self._execute_pipeline(audio_array, audio_duration, num_speakers=effective_num_speakers)
 
     def _execute_pipeline(
         self, audio_input: str | np.ndarray, audio_duration: float, num_speakers: int | None = None

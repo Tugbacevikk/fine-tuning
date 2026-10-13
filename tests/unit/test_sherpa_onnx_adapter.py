@@ -131,3 +131,42 @@ def test_sherpa_onnx_multithreaded_lock(tmp_path):
     assert len(results["t2"]) > 0
 
 
+def test_sherpa_onnx_automatic_clustering_num_speakers_none():
+    """
+    Doğrular: Adapter num_speakers=2 ile başlatılmış olsa bile,
+    diarize(..., num_speakers=None) çağrısı kümeleme konfigürasyonunu
+    kesinlikle -1 (otomatik) yapar.
+    """
+    adapter = SherpaOnnxAudioAdapter(num_speakers=2)
+
+    mock_pipeline = MagicMock()
+    mock_raw_seg = MagicMock()
+    mock_raw_seg.speaker = 0
+    mock_raw_seg.start = 0.0
+    mock_raw_seg.end = 1.0
+    mock_raw_seg.duration = 1.0
+    mock_result = MagicMock()
+    mock_result.sort_by_start_time.return_value = [mock_raw_seg]
+    mock_pipeline.process.return_value = mock_result
+
+    adapter._pipeline = mock_pipeline
+    mock_config = MagicMock()
+    mock_config.clustering.num_clusters = 2
+    adapter._config = mock_config
+    adapter._initialized = True
+
+    # 1. num_speakers=None ile çağır (Otomatik)
+    adapter.diarize(np.zeros(16000, dtype=np.float32), num_speakers=None)
+    assert adapter._config.clustering.num_clusters == -1
+    mock_pipeline.set_config.assert_called_with(mock_config)
+
+    # 2. num_speakers=3 ile çağır (Belirli sayı)
+    adapter.diarize(np.zeros(16000, dtype=np.float32), num_speakers=3)
+    assert adapter._config.clustering.num_clusters == 3
+
+    # 3. Parametresiz çağır (Unset -> self.num_speakers=2'ye düşer)
+    adapter.diarize(np.zeros(16000, dtype=np.float32))
+    assert adapter._config.clustering.num_clusters == 2
+
+
+

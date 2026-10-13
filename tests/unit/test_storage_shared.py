@@ -186,7 +186,7 @@ async def test_job_service_execute_job_lazy_get_path():
 
     # process_bytes çağrıldığı için get_path 0 kez tetiklenmeli
     mock_storage.get_path.assert_not_called()
-    mock_pipeline.process_bytes.assert_called_once_with(b"test_audio_bytes")
+    mock_pipeline.process_bytes.assert_called_once_with(b"test_audio_bytes", num_speakers=None)
 
 
 @pytest.mark.unit

@@ -75,10 +75,10 @@ def _build_pipeline() -> AudioAnalysisPipeline:
     escalation_mode = settings.diarization_escalation
 
     ecapa_diarizer = SpeechBrainECAPADiarizer(
-        device_config=device_config, num_speakers=settings.target_num_speakers
+        device_config=device_config, num_speakers=None
     )
     community1_diarizer = PyannoteAudioAdapter(
-        device_config=device_config, num_speakers=settings.target_num_speakers
+        device_config=device_config, num_speakers=None
     )
 
     if diar_engine_name in ("sherpa_onnx", "sherpa"):
@@ -88,7 +88,7 @@ def _build_pipeline() -> AudioAnalysisPipeline:
 
         primary_diarizer = SherpaOnnxAudioAdapter(
             device_config=device_config,
-            num_speakers=settings.target_num_speakers,
+            num_speakers=None,
             cluster_threshold=settings.sherpa_cluster_threshold,
             num_threads=diar_threads,
         )

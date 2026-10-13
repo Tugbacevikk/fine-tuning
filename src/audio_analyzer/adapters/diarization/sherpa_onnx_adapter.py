@@ -13,6 +13,8 @@ from audio_analyzer.utils.cpu_budget import setup_cpu_thread_budget
 
 logger = logging.getLogger(__name__)
 
+_UNSET = object()
+
 
 class SherpaOnnxAudioAdapter(IDiarizer):
     """
@@ -251,7 +253,7 @@ class SherpaOnnxAudioAdapter(IDiarizer):
 
         return result_segments
 
-    def diarize(self, audio_input: object, num_speakers: int | None = None) -> list[DiarizationSegment]:
+    def diarize(self, audio_input: object, num_speakers: int | None | object = _UNSET) -> list[DiarizationSegment]:
         self._lazy_load_pipeline()
 
         if self._pipeline is None:
@@ -263,8 +265,14 @@ class SherpaOnnxAudioAdapter(IDiarizer):
             if len(samples) == 0:
                 return []
 
-            target_num_speakers = num_speakers if num_speakers is not None else self.num_speakers
-            target_clusters = target_num_speakers if target_num_speakers and target_num_speakers > 0 else -1
+            if num_speakers is _UNSET:
+                target_num_speakers = self.num_speakers
+            else:
+                target_num_speakers = num_speakers
+
+            target_clusters = (
+                target_num_speakers if target_num_speakers is not None and target_num_speakers > 0 else -1
+            )
 
             # Thread-safe set_config + process çağrısı
             with self._lock:
