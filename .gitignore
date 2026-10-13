@@ -40,6 +40,7 @@ analiz_sonuclari/
 recordings/
 kayitlar/
 *Yeni klasör*
+*benchmark*.json
 
 # Python & Caches
 __pycache__/

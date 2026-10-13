@@ -211,7 +211,10 @@ async def readiness_check():
     # 2. Redis & Worker Kontrolü
     worker_ok = True
     try:
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        from audio_analyzer.config import get_settings
+
+        settings = get_settings()
+        redis_url = settings.redis_url
         import redis.asyncio as aioredis
 
         from audio_analyzer.adapters.messaging.redis_stream_adapter import (
@@ -230,15 +233,16 @@ async def readiness_check():
             if hb:
                 worker_ok = True
             else:
-                # b) Consumer group aktiflik kontrolü (son 30 sn içinde aktif tüketici)
+                # b) Consumer group aktiflik kontrolü (genişletilmiş tolerans: 5 dakika)
                 try:
-                    stream_key = os.getenv("STREAM_NAME", "audio_analysis_stream")
-                    group_name = os.getenv("STREAM_GROUP", "audio_workers_group")
+                    stream_key = settings.redis_stream_name
+                    group_name = settings.redis_stream_group
                     consumers = await client.xinfo_consumers(stream_key, group_name)
                     if consumers:
+                        idle_limit = settings.worker_consumer_idle_threshold_ms
                         for c in consumers:
                             idle = c.get("idle", 999999) if isinstance(c, dict) else 999999
-                            if idle < 30000:
+                            if idle < idle_limit:
                                 worker_ok = True
                                 break
                 except Exception:
@@ -246,6 +250,7 @@ async def readiness_check():
     except Exception as ex:
         logger.warning("Readiness Redis/Worker kontrol uyarısı: %s", ex)
         worker_ok = False
+        redis_ok = False
 
     # 3. Model Yüklü Kontrolü (Senkron yükleme yapmadan kontrol eder)
     try:
@@ -257,7 +262,8 @@ async def readiness_check():
     except Exception as ex:
         logger.warning("Readiness Model kontrol uyarısı: %s", ex)
 
-    is_ready = db_ok and ((redis_ok and worker_ok) if use_redis_stream else True)
+    # Readiness probe Redis'i kontrol eder ama worker'ın meşguliyetinden bağımsızdır (meşgulken probe düşmez)
+    is_ready = db_ok and (redis_ok if use_redis_stream else True)
     status_code = 200 if is_ready else 503
 
     return Response(
@@ -265,8 +271,9 @@ async def readiness_check():
             {
                 "status": "READY" if is_ready else "NOT_READY",
                 "database": "OK" if db_ok else "ERROR",
-                "redis": "OK" if redis_ok else "ERROR",
-                "worker": "OK" if worker_ok else "DOWN",
+                "redis": "OK" if redis_ok else ("DISABLED" if not use_redis_stream else "ERROR"),
+                "worker": "OK" if (worker_ok or not use_redis_stream) else "DOWN",
+                "use_redis_stream": use_redis_stream,
                 "model_loaded": "OK" if model_ok else "PENDING",
             }
         ),

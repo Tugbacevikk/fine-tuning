@@ -21,22 +21,28 @@ class RedisStreamAdapter:
     def __init__(
         self,
         redis_url: str | None = None,
-        stream_key: str = DEFAULT_STREAM_KEY,
-        group_name: str = DEFAULT_GROUP_NAME,
+        stream_key: str | None = None,
+        group_name: str | None = None,
         redis_client: aioredis.Redis | None = None,
     ):
-        self.redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
-        self.stream_key = stream_key
-        self.group_name = group_name
+        from audio_analyzer.config import get_settings
+
+        settings = get_settings()
+        self.redis_url = redis_url or settings.redis_url
+        self.stream_key = stream_key or settings.redis_stream_name or DEFAULT_STREAM_KEY
+        self.group_name = group_name or settings.redis_stream_group or DEFAULT_GROUP_NAME
         self._custom_client = redis_client
 
     @classmethod
     def get_pool(cls, redis_url: str) -> aioredis.ConnectionPool:
         """Yüksek eşzamanlılık (4k-5k req/sec) için paylaşımlı Redis bağlantı havuzu."""
         if cls._pool is None:
+            from audio_analyzer.config import get_settings
+
+            max_conn = get_settings().redis_max_connections
             cls._pool = aioredis.ConnectionPool.from_url(
                 redis_url,
-                max_connections=int(os.getenv("REDIS_MAX_CONNECTIONS", "200")),
+                max_connections=max_conn,
                 decode_responses=True,
             )
         return cls._pool

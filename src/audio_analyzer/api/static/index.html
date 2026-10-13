@@ -1250,6 +1250,7 @@
         }
 
         let hasStalePendingJobs = false;
+        let stalePendingJobMinutes = 0;
 
         async function checkWorkerHealth() {
             try {
@@ -1260,13 +1261,44 @@
                 const desc = document.getElementById('workerAlertDesc');
                 if (!banner) return;
 
-                if (data.worker === 'DOWN' || data.status === 'NOT_READY') {
-                    banner.style.display = 'flex';
-                    title.innerText = '⚠️ Arka Plan Analiz İşleyicisi (Worker) Çalışmıyor!';
-                    desc.innerText = 'stream_worker servisi kapalı veya çökmüş durumda. Kuyruktaki ses analizleri bekletilecek ancak worker başlatılana kadar işlenmeyecektir. Lütfen konsolda "python -m audio_analyzer.workers.stream_worker" komutunu çalıştırın.';
-                } else if (!hasStalePendingJobs) {
+                // USE_REDIS_STREAM=false durumunda arka plan worker uyarısı gösterilmez
+                if (data.use_redis_stream === false) {
                     banner.style.display = 'none';
+                    return;
                 }
+
+                // 1. Durum: Redis'e bağlanılamıyor
+                if (data.redis === 'ERROR' || data.redis === 'DOWN') {
+                    banner.style.display = 'flex';
+                    banner.style.background = 'rgba(239, 68, 68, 0.15)';
+                    banner.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+                    title.innerText = '⚠️ Redis Bağlantısı Kurulamıyor!';
+                    desc.innerText = 'Redis servisi (6379 portu) kapalı veya ulaşılamıyor. Kuyruk sistemi için Redis gereklidir. Lütfen Redis servisini başlatın veya Docker ile çalıştırın (\'docker compose up -d redis\').';
+                    return;
+                }
+
+                // 2. Durum: Redis çalışıyor ama worker heartbeat yok
+                if (data.worker === 'DOWN') {
+                    banner.style.display = 'flex';
+                    banner.style.background = 'rgba(239, 68, 68, 0.15)';
+                    banner.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+                    title.innerText = '⚠️ Arka Plan Analiz İşleyicisi (Worker) Çalışmıyor!';
+                    desc.innerText = 'Redis bağlantısı başarılı ancak aktif bir stream_worker sinyali alınamadı. Kuyruktaki işlerin işlenmesi için konsolda "python -m audio_analyzer.workers.stream_worker" komutunu çalıştırın.';
+                    return;
+                }
+
+                // 3. Durum: Worker çalışıyor ama meşgul (iş N dakikadır PENDING)
+                if (hasStalePendingJobs) {
+                    banner.style.display = 'flex';
+                    banner.style.background = 'rgba(245, 158, 11, 0.15)';
+                    banner.style.borderColor = 'rgba(245, 158, 11, 0.5)';
+                    title.innerText = `⚠️ Worker Meşgul: İşler Sırada Bekliyor (~${stalePendingJobMinutes} dk)`;
+                    desc.innerText = `Worker aktif ve çalışıyor ancak bazı ses analizleri ${stalePendingJobMinutes} dakikadır PENDING durumunda sırada bekliyor. Arka planda uzun süren bir ses analizi yürütülüyor olabilir.`;
+                    return;
+                }
+
+                // Her şey yolunda
+                banner.style.display = 'none';
             } catch (err) {
                 console.warn('Worker sağlık kontrolü hatası:', err);
             }
@@ -1295,15 +1327,19 @@
                     let isStale = false;
                     if (isPending && j.created_at) {
                         const ageMs = Date.now() - new Date(j.created_at).getTime();
-                        if (ageMs > 300000) { // 5 dakikadan uzun
+                        const ageMin = Math.max(1, Math.round(ageMs / 60000));
+                        if (ageMs > 180000) { // 3 dakikadan uzun
                             isStale = true;
                             hasStalePendingJobs = true;
+                            if (ageMin > stalePendingJobMinutes) {
+                                stalePendingJobMinutes = ageMin;
+                            }
                         }
                     }
 
                     const statusColor = j.status === 'COMPLETED' ? '#10b981' : (j.status === 'FAILED' ? '#ef4444' : '#f59e0b');
                     const statusTextHtml = isStale
-                        ? `<span style="color: #ef4444; font-weight: 700;">${safeStatus} (⚠️ 5+ dk bekliyor - Worker kontrol edilmeli)</span>`
+                        ? `<span style="color: #ef4444; font-weight: 700;">${safeStatus} (⚠️ ${stalePendingJobMinutes}+ dk bekliyor - Worker kontrol edilmeli)</span>`
                         : `<span style="color: ${statusColor}; font-weight: 600;">${safeStatus}</span>`;
 
                     return `
@@ -1326,8 +1362,10 @@
                     const banner = document.getElementById('workerAlertBanner');
                     if (banner) {
                         banner.style.display = 'flex';
-                        document.getElementById('workerAlertTitle').innerText = '⚠️ Kuyrukta 5+ Dakikadır Bekleyen Görevler Var!';
-                        document.getElementById('workerAlertDesc').innerText = 'Bazı ses analizleri 5 dakikadan uzun süredir PENDING durumunda bekliyor. Arka plan worker servisini (stream_worker) kontrol edin.';
+                        banner.style.background = 'rgba(245, 158, 11, 0.15)';
+                        banner.style.borderColor = 'rgba(245, 158, 11, 0.5)';
+                        document.getElementById('workerAlertTitle').innerText = `⚠️ Worker Meşgul: İşler Sırada Bekliyor (~${stalePendingJobMinutes} dk)`;
+                        document.getElementById('workerAlertDesc').innerText = `Bazı ses analizleri ${stalePendingJobMinutes} dakikadır PENDING durumunda sırada bekliyor. Arka planda uzun süren bir ses analizi yürütülüyor veya worker meşgul olabilir.`;
                     }
                 }
             } catch (err) {

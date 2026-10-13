@@ -78,6 +78,24 @@ class Settings:
         default_factory=lambda: os.getenv("USE_REDIS_STREAM", "false").lower() == "true"
     )
     redis_url: str = field(default_factory=lambda: os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+    redis_stream_name: str = field(
+        default_factory=lambda: os.getenv("STREAM_NAME", "audio_analysis_stream")
+    )
+    redis_stream_group: str = field(
+        default_factory=lambda: os.getenv("STREAM_GROUP", "audio_workers_group")
+    )
+    redis_max_connections: int = field(
+        default_factory=lambda: int(os.getenv("REDIS_MAX_CONNECTIONS", "200"))
+    )
+    worker_heartbeat_ttl_sec: int = field(
+        default_factory=lambda: int(os.getenv("WORKER_HEARTBEAT_TTL_SEC", "90"))
+    )
+    worker_liveness_interval_sec: float = field(
+        default_factory=lambda: float(os.getenv("WORKER_LIVENESS_INTERVAL_SEC", "10.0"))
+    )
+    worker_consumer_idle_threshold_ms: int = field(
+        default_factory=lambda: int(os.getenv("WORKER_CONSUMER_IDLE_THRESHOLD_MS", "300000"))
+    )
 
     # 4. Yapay Zeka Model Yapılandırması
     model_dir: str = field(

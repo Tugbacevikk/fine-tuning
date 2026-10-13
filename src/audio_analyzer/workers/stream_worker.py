@@ -34,15 +34,20 @@ class RedisStreamWorker:
         self._background_tasks: set[asyncio.Task] = set()
         self._liveness_task: asyncio.Task | None = None
 
-    async def _liveness_heartbeat_loop(self, interval_sec: float = 5.0):
-        """Worker'ın hayatta olduğunu Redis'e periyodik olarak (TTL=15s) bildirir."""
+    async def _liveness_heartbeat_loop(self, interval_sec: float | None = None):
+        """Worker'ın hayatta olduğunu Redis'e periyodik olarak (TTL>=60s) bildirir."""
+        from audio_analyzer.config import get_settings
+
+        settings = get_settings()
+        ttl = max(60, settings.worker_heartbeat_ttl_sec)
+        interval = interval_sec or settings.worker_liveness_interval_sec
         client = self.adapter.get_client()
         try:
             while self.running:
                 now_str = str(time.time())
-                await client.set("audio_analyzer:worker_heartbeat", now_str, ex=15)
-                await client.set(f"audio_analyzer:worker_heartbeat:{self.consumer_name}", now_str, ex=15)
-                await asyncio.sleep(interval_sec)
+                await client.set("audio_analyzer:worker_heartbeat", now_str, ex=ttl)
+                await client.set(f"audio_analyzer:worker_heartbeat:{self.consumer_name}", now_str, ex=ttl)
+                await asyncio.sleep(interval)
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -267,9 +272,23 @@ async def start_worker_main():
 
     await worker.run()
 
+
 def main():
+    import sys
+
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(start_worker_main())
+    try:
+        asyncio.run(start_worker_main())
+    except KeyboardInterrupt:
+        logger.info("Worker kullanıcı tarafından durduruldu.")
+        sys.exit(0)
+    except Exception as exc:
+        logger.critical(
+            "Worker başlatılırken veya çalışırken kritik hata oluştu: %s",
+            exc,
+            exc_info=True,
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":
