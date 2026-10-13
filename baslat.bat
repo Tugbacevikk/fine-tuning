@@ -12,14 +12,19 @@ if exist ".venv\Scripts\python.exe" (
     set PYTHON_CMD=python
 )
 
-echo [1/2] Arka Plan Analiz Isleyicisi (Stream Worker) baslatiliyor...
-start "Ses Analizi - Stream Worker" cmd /k "%PYTHON_CMD% -m audio_analyzer.workers.stream_worker"
-
-echo [2/2] Web Sunucusu (FastAPI + Uvicorn) baslatiliyor...
+findstr /i "^USE_REDIS_STREAM=true" .env >nul
+if %errorlevel% equ 0 (
+    echo [1/2] Arka Plan Analiz Isleyicisi (Stream Worker) baslatiliyor...
+    start "Ses Analizi - Stream Worker" cmd /k "%PYTHON_CMD% -m audio_analyzer.workers.stream_worker"
+    echo [2/2] Web Sunucusu (FastAPI + Uvicorn) baslatiliyor...
+) else (
+    echo [BILGI] USE_REDIS_STREAM=false: Worker penceresi gerekmiyor (Gelistirme modu).
+    echo [1/1] Web Sunucusu (FastAPI + Uvicorn) baslatiliyor...
+)
 start "Ses Analizi - Web API" cmd /k "%PYTHON_CMD% -m uvicorn audio_analyzer.api.main:app --host 127.0.0.1 --port 8000 --reload"
 
 echo.
 echo ================================================================
-echo   Her iki servis ayri pencerelerde baslatildi!
+echo   Sistem basariyla baslatildi!
 echo   Tarayicinizda acin: http://127.0.0.1:8000
 echo ================================================================
