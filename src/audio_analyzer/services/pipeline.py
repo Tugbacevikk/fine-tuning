@@ -315,25 +315,26 @@ class AudioAnalysisPipeline:
             elif diarization_segments:
                 total_duration = max(s.end_time for s in diarization_segments)
 
-        # 5c. Transkriptsiz Konuşma Tespiti (Speech Gap Detection)
-        from audio_analyzer.services.speech_gap_detector import detect_untranscribed_speech
-        untranscribed_speech = detect_untranscribed_speech(diarization_segments, words, min_gap_sec=2.0)
+        # 5c. Transkriptsiz Konuşma ve Kapsama Tespiti (Speech Gap & Coverage Detection)
+        from audio_analyzer.services.speech_gap_detector import calculate_speech_coverage
+        safety_gaps, cov_stats = calculate_speech_coverage(diarization_segments, words, min_safety_gap_sec=2.0)
 
         # 5d. STT Güvenlik Ağı (Safety Net)
-        if settings.enable_stt_safety_net and untranscribed_speech:
+        if settings.enable_stt_safety_net and safety_gaps:
             words = self._rescue_untranscribed_speech(
-                audio_input, words, untranscribed_speech, total_duration
+                audio_input, words, safety_gaps, total_duration
             )
-            # Kurtarma sonrasında transkriptsiz konuşma listesini güncelle
-            untranscribed_speech = detect_untranscribed_speech(diarization_segments, words, min_gap_sec=2.0)
+            # Kurtarma sonrasında metrikleri güncelle
+            safety_gaps, cov_stats = calculate_speech_coverage(diarization_segments, words, min_safety_gap_sec=2.0)
 
-        if untranscribed_speech:
-            total_untranscribed_dur = sum(s.duration for s in untranscribed_speech)
-            logger.warning(
-                "Transkriptsiz konuşma tespit edildi: %d aralık, toplam %.2f sn. Detay: %s",
-                len(untranscribed_speech),
-                round(total_untranscribed_dur, 2),
-                [(s.start_time, s.end_time, s.duration) for s in untranscribed_speech],
+        if safety_gaps or cov_stats["all_untranscribed_seconds"] > 0:
+            logger.info(
+                "Konuşma Kapsama Analizi: Toplam konuşma=%.2f sn, Transkriptsiz=%.2f sn (Kapsama: %%%.1f). 2s+ Aralıklar=%d adet (%.2f sn)",
+                cov_stats["total_speech_seconds"],
+                cov_stats["all_untranscribed_seconds"],
+                cov_stats["speech_coverage_percentage"],
+                cov_stats["untranscribed_speech_count"],
+                cov_stats["untranscribed_speech_seconds"],
             )
 
         # 6. Overlap Detection
@@ -341,9 +342,14 @@ class AudioAnalysisPipeline:
         overlap_summary = OverlapDetector.detect_overlaps(
             diarization_segments=diarization_segments, total_audio_duration=total_duration
         )
-        overlap_summary.untranscribed_speech = untranscribed_speech
-        overlap_summary.untranscribed_speech_count = len(untranscribed_speech)
-        overlap_summary.untranscribed_speech_seconds = round(sum(s.duration for s in untranscribed_speech), 2)
+        overlap_summary.total_speech_seconds = cov_stats["total_speech_seconds"]
+        overlap_summary.all_untranscribed_seconds = cov_stats["all_untranscribed_seconds"]
+        overlap_summary.speech_coverage_percentage = cov_stats["speech_coverage_percentage"]
+        overlap_summary.untranscribed_speech_seconds = cov_stats["untranscribed_speech_seconds"]
+        overlap_summary.untranscribed_speech_count = cov_stats["untranscribed_speech_count"]
+        overlap_summary.untranscribed_speech = safety_gaps
+        high_temp_count = sum(1 for w in words if getattr(w, "low_confidence", False))
+        overlap_summary.high_temperature_segment_count = high_temp_count
         STAGE_DURATION_HISTOGRAM.labels(stage="overlap_detection").observe(time.monotonic() - t0)
 
         # 7. FusionEngine
@@ -354,6 +360,8 @@ class AudioAnalysisPipeline:
         # 8. SemanticRefiner (Her profilde anlamsal düzeltme ve imla kurallarını çalıştırır)
         t0 = time.monotonic()
         final_utterances = self.semantic_refiner.refine(raw_utterances)
+        low_conf_utts = sum(1 for u in final_utterances if getattr(u, "low_confidence", False))
+        overlap_summary.low_confidence_utterance_count = low_conf_utts
         STAGE_DURATION_HISTOGRAM.labels(stage="semantic_refine").observe(time.monotonic() - t0)
 
         return final_utterances, detected_language, overlap_summary

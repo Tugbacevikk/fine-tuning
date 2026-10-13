@@ -48,6 +48,10 @@ class WordSegment(BaseModel):
     start_time: float
     end_time: float
     probability: float = 1.0
+    temperature: float = 0.0
+    avg_logprob: float = 0.0
+    compression_ratio: float = 0.0
+    low_confidence: bool = False
 
     @property
     def midpoint(self) -> float:
@@ -85,6 +89,10 @@ class TranscriptUtterance(BaseModel):
     start_time: float
     end_time: float
     text: str
+    low_confidence: bool = False
+    confidence_label: str | None = None
+    temperature: float | None = None
+    avg_logprob: float | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -114,9 +122,14 @@ class OverlapSummary(BaseModel):
     overlap_percentage: float = 0.0
     interrupt_count: int = 0
     overlaps: list[OverlapSegment] = Field(default_factory=list)
+    total_speech_seconds: float = 0.0
+    all_untranscribed_seconds: float = 0.0
+    speech_coverage_percentage: float = 100.0
     untranscribed_speech_seconds: float = 0.0
     untranscribed_speech_count: int = 0
     untranscribed_speech: list[UntranscribedSpeechSegment] = Field(default_factory=list)
+    high_temperature_segment_count: int = 0
+    low_confidence_utterance_count: int = 0
 
 
 class AudioRecord(BaseModel):

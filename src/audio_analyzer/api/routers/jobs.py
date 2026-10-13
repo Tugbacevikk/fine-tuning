@@ -100,6 +100,10 @@ class UtteranceResponse(BaseModel):
     start_time: float
     end_time: float
     text: str
+    low_confidence: bool = False
+    confidence_label: str | None = None
+    temperature: float | None = None
+    avg_logprob: float | None = None
 
 
 class JobStatusResponse(BaseModel):
@@ -271,6 +275,10 @@ async def list_jobs(
                     start_time=u.start_time,
                     end_time=u.end_time,
                     text=u.text,
+                    low_confidence=getattr(u, "low_confidence", False),
+                    confidence_label=getattr(u, "confidence_label", None),
+                    temperature=getattr(u, "temperature", None),
+                    avg_logprob=getattr(u, "avg_logprob", None),
                 )
                 for u in r.utterances
             ],
@@ -311,6 +319,10 @@ async def get_job_status(
             start_time=u.start_time,
             end_time=u.end_time,
             text=u.text,
+            low_confidence=getattr(u, "low_confidence", False),
+            confidence_label=getattr(u, "confidence_label", None),
+            temperature=getattr(u, "temperature", None),
+            avg_logprob=getattr(u, "avg_logprob", None),
         )
         for u in record.utterances
     ]

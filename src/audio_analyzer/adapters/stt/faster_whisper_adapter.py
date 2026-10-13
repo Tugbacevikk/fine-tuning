@@ -142,6 +142,21 @@ class FasterWhisperAdapter(ISTTEngine):
         dropped_samples: list[str] = []
 
         for segment in segments:
+            seg_temp = getattr(segment, "temperature", 0.0) or 0.0
+            seg_logprob = getattr(segment, "avg_logprob", 0.0) or 0.0
+            seg_comp = getattr(segment, "compression_ratio", 0.0) or 0.0
+            is_low_conf = seg_temp >= 0.6
+
+            logger.info(
+                "Whisper segment [%.2f - %.2f]: temp=%.1f, avg_logprob=%.2f, compression_ratio=%.2f%s",
+                segment.start,
+                segment.end,
+                seg_temp,
+                seg_logprob,
+                seg_comp,
+                " [DÜŞÜK GÜVEN]" if is_low_conf else "",
+            )
+
             if hasattr(segment, "words") and segment.words:
                 for w in segment.words:
                     clean_w = w.word.strip().lower()
@@ -161,6 +176,10 @@ class FasterWhisperAdapter(ISTTEngine):
                             start_time=w.start,
                             end_time=w.end,
                             probability=w.probability if hasattr(w, "probability") else 1.0,
+                            temperature=seg_temp,
+                            avg_logprob=seg_logprob,
+                            compression_ratio=seg_comp,
+                            low_confidence=is_low_conf,
                         )
                     )
 

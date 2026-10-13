@@ -131,12 +131,19 @@ class FusionEngine:
         start_time = words[0].start_time
         end_time = words[-1].end_time
         text = " ".join(w.word.strip() for w in words if w.word and w.word.strip()).strip()
+        is_low_conf = any(getattr(w, "low_confidence", False) for w in words)
+        max_temp = max((getattr(w, "temperature", 0.0) for w in words), default=0.0)
+        avg_lp = float(sum(getattr(w, "avg_logprob", 0.0) for w in words) / len(words)) if words else 0.0
         return TranscriptUtterance(
             id=uuid.uuid4(),
             speaker_id=speaker_id,
             start_time=start_time,
             end_time=end_time,
             text=text,
+            low_confidence=is_low_conf,
+            confidence_label="düşük güven" if is_low_conf else None,
+            temperature=max_temp,
+            avg_logprob=round(avg_lp, 2),
         )
 
     def _build_single_speaker_utterances(
