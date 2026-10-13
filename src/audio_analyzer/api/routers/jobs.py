@@ -129,6 +129,13 @@ class UtteranceCreateRequest(BaseModel):
     end_time: float
     text: str
 
+
+class DatasetExportRequest(BaseModel):
+    reviewer_name: str
+    consent_confirmed: bool
+    notes: str | None = None
+
+
 # --- Endpoints ---
 @router.post("/analyze", response_model=JobCreateResponse, status_code=202)
 async def upload_and_analyze_audio(
@@ -482,48 +489,110 @@ async def update_utterance_speaker(
     if not success:
         raise HTTPException(status_code=404, detail="Güncellenecek cümle bulunamadı.")
 
-    # Otomatik RTTM senkronizasyonu: 'Değişikliği Kaydet' tıklandığında tests/fixtures/diarization_eval/real_turkish altına kaydeder
-    try:
-        updated_rec = await repository.get_record_by_id(record_uuid)
-        if updated_rec and updated_rec.utterances:
-            storage = get_storage_adapter()
-            audio_bytes = None
-            try:
-                audio_bytes = storage.get_bytes(updated_rec.storage_uri)
-            except Exception:
-                pass
-            export_job_as_rttm(updated_rec, audio_bytes=audio_bytes)
-    except Exception as exp_err:
-        logger.warning("Otomatik RTTM dışa aktarma uyarısı: %s", exp_err)
-
     return {"status": "SUCCESS", "message": "Konuşmacı etiketi başarıyla güncellendi."}
 
 
-def export_job_as_rttm(record, audio_bytes: bytes | None = None) -> tuple[str, str]:
+def convert_to_16k_mono_wav(input_bytes: bytes, output_path: Path) -> None:
     """
-    Kayıttaki utterance'ları standart RTTM formatında ve orijinal ses dosyasını
-    tests/fixtures/diarization_eval/real_turkish dizinine kaydeder.
+    Ses baytlarını ffmpeg kullanarak 16 kHz mono 16-bit PCM WAV formatına çevirir.
+    FFmpeg bulunamazsa soundfile/scipy fallback uygular; çözülemezse ham baytları yazar.
     """
-    target_dir = Path("tests/fixtures/diarization_eval/real_turkish")
+    import subprocess
+    import tempfile
+
+    tmp_in_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".tmp", delete=False) as tmp_in:
+            tmp_in.write(input_bytes)
+            tmp_in_path = Path(tmp_in.name)
+
+        cmd = [
+            "ffmpeg", "-y", "-i", str(tmp_in_path),
+            "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
+            str(output_path),
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if res.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
+            return
+    except Exception as e:
+        logger.warning("FFmpeg dönüştürme uyarısı: %s", e)
+    finally:
+        if tmp_in_path is not None:
+            try:
+                tmp_in_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    # Fallback: soundfile + scipy
+    try:
+        import soundfile as sf
+        import io
+        import numpy as np
+        import scipy.signal
+        from math import gcd
+
+        audio_array, sr = sf.read(io.BytesIO(input_bytes))
+        if audio_array.ndim > 1:
+            audio_array = np.mean(audio_array, axis=1)
+
+        if sr != 16000:
+            g = gcd(int(sr), 16000)
+            audio_array = scipy.signal.resample_poly(audio_array, 16000 // g, int(sr) // g)
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        sf.write(str(output_path), audio_array, 16000, subtype="PCM_16")
+        return
+    except Exception as sf_err:
+        logger.warning("Ses dönüştürme fallback uyarısı (test baytları olabilir): %s", sf_err)
+
+    # Test verisi veya çözülemeyen format durumunda doğrudan yaz
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "wb") as f_out:
+        f_out.write(input_bytes)
+
+
+def export_job_as_rttm(
+    record,
+    audio_bytes: bytes | None = None,
+    reviewer_name: str = "",
+    notes: str | None = None,
+    target_dir: Path | None = None,
+) -> tuple[str, str]:
+    """
+    Kayıttaki utterance'ları standart RTTM formatında ve 16kHz mono WAV ses dosyasını
+    tests/fixtures/diarization_eval/real_turkish/_bekleyen dizinine kaydeder.
+    Aynı isimde dosya varsa üzerine yazmaz, numara ekleyerek benzersiz yapar.
+    """
+    if target_dir is None:
+        target_dir = Path("tests/fixtures/diarization_eval/real_turkish/_bekleyen")
     target_dir.mkdir(parents=True, exist_ok=True)
 
     raw_stem = Path(record.file_name).stem
     safe_stem = re.sub(r"[^\w\-]", "_", raw_stem).strip("_") or f"sample_{str(record.id)[:8]}"
 
-    rttm_path = target_dir / f"{safe_stem}.rttm"
-    wav_path = target_dir / f"{safe_stem}.wav"
+    candidate_stem = safe_stem
+    counter = 1
+    while (target_dir / f"{candidate_stem}.rttm").exists() or (target_dir / f"{candidate_stem}.wav").exists():
+        candidate_stem = f"{safe_stem}_{counter}"
+        counter += 1
+
+    rttm_path = target_dir / f"{candidate_stem}.rttm"
+    wav_path = target_dir / f"{candidate_stem}.wav"
 
     if audio_bytes and len(audio_bytes) > 0:
-        with open(wav_path, "wb") as f_wav:
-            f_wav.write(audio_bytes)
+        convert_to_16k_mono_wav(audio_bytes, wav_path)
 
     sorted_utts = sorted(record.utterances, key=lambda u: u.start_time)
     with open(rttm_path, "w", encoding="utf-8") as f_rttm:
+        if reviewer_name:
+            f_rttm.write(f"# Reviewer: {reviewer_name}\n")
+        if notes:
+            f_rttm.write(f"# Notes: {notes}\n")
         for u in sorted_utts:
             dur = max(0.01, round(u.end_time - u.start_time, 3))
             start_t = round(u.start_time, 3)
             f_rttm.write(
-                f"SPEAKER {safe_stem} 1 {start_t:.3f} {dur:.3f} <NA> <NA> {u.speaker_id} <NA> <NA>\n"
+                f"SPEAKER {candidate_stem} 1 {start_t:.3f} {dur:.3f} <NA> <NA> {u.speaker_id} <NA> <NA>\n"
             )
 
     return str(rttm_path), str(wav_path)
@@ -532,14 +601,36 @@ def export_job_as_rttm(record, audio_bytes: bytes | None = None) -> tuple[str, s
 @router.post("/jobs/{job_id}/export-rttm")
 async def export_job_rttm(
     job_id: str,
+    req: DatasetExportRequest,
     repository: ITranscriptRepository = Depends(get_repository),
     _api_key: str | None = Depends(verify_api_key),
 ):
     """
     Düzeltilmiş RTTM dışa aktarma:
     Kullanıcının yaptığı düzenlemeleri gerçek test seti oluşturmak için
-    'tests/fixtures/diarization_eval/real_turkish' altına RTTM ve WAV olarak kaydeder.
+    onay kuyruğuna ('tests/fixtures/diarization_eval/real_turkish/_bekleyen') RTTM ve WAV olarak kaydeder.
     """
+    from audio_analyzer.config import get_settings
+    settings = get_settings()
+
+    if not settings.enable_dataset_export:
+        raise HTTPException(
+            status_code=403,
+            detail="Test setine veri aktarımı devre dışı (ENABLE_DATASET_EXPORT=false). Sistem yöneticisi bu özelliği etkinleştirmelidir.",
+        )
+
+    if not req.reviewer_name or not req.reviewer_name.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Kontrol eden kişinin adı (reviewer_name) zorunludur.",
+        )
+
+    if not req.consent_confirmed:
+        raise HTTPException(
+            status_code=400,
+            detail="Kayıttaki kişilerin rızasının alındığı onaylanmalıdır (consent_confirmed=true).",
+        )
+
     try:
         record_uuid = uuid.UUID(job_id)
     except ValueError:
@@ -559,13 +650,19 @@ async def export_job_rttm(
     except Exception as e:
         logger.warning("Ses baytları depolamadan alınamadı: %s", e)
 
-    rttm_p, wav_p = export_job_as_rttm(record, audio_bytes=audio_bytes)
+    rttm_p, wav_p = export_job_as_rttm(
+        record,
+        audio_bytes=audio_bytes,
+        reviewer_name=req.reviewer_name.strip(),
+        notes=req.notes.strip() if req.notes else None,
+    )
 
     return {
         "status": "SUCCESS",
-        "message": "Düzeltilmiş RTTM ve ses dosyası başarıyla 'tests/fixtures/diarization_eval/real_turkish' dizinine aktarıldı.",
+        "message": "Düzeltilmiş RTTM ve 16kHz mono ses dosyası başarıyla inceleme kuyruğuna ('_bekleyen') aktarıldı.",
         "rttm_file": rttm_p,
         "wav_file": wav_p,
+        "reviewer": req.reviewer_name.strip(),
         "total_utterances": len(record.utterances),
     }
 

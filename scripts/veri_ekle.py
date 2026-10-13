@@ -96,7 +96,22 @@ def read_audacity_label_file(label_txt: Path) -> list[tuple[float, float, str]]:
 
 
 def normalize_audio_to_wav(input_path: Path, output_path: Path):
-    """Ses dosyasını 16kHz mono WAV formatına dönüştürür."""
+    """Ses dosyasını ffmpeg ile 16kHz mono WAV formatına dönüştürür (yedek: soundfile)."""
+    import subprocess
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        cmd = [
+            "ffmpeg", "-y", "-i", str(input_path),
+            "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
+            str(output_path),
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if res.returncode == 0 and output_path.exists() and output_path.stat().st_size > 0:
+            return
+    except Exception as e:
+        logger.warning("FFmpeg dönüştürme uyarısı: %s, soundfile fallback deneniyor...", e)
+
     import soundfile as sf
     import numpy as np
     import scipy.signal
@@ -109,9 +124,7 @@ def normalize_audio_to_wav(input_path: Path, output_path: Path):
     if sr != 16000:
         g = gcd(int(sr), 16000)
         audio_array = scipy.signal.resample_poly(audio_array, 16000 // g, int(sr) // g)
-        sr = 16000
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
     sf.write(str(output_path), audio_array, 16000, subtype="PCM_16")
 
 
@@ -205,15 +218,21 @@ def cmd_kaydet(
     hedef_klasor.mkdir(parents=True, exist_ok=True)
 
     safe_stem = re.sub(r"[^\w\-]", "_", ses_path.stem).strip("_")
-    dest_wav = hedef_klasor / f"{safe_stem}.wav"
-    dest_rttm = hedef_klasor / f"{safe_stem}.rttm"
+    candidate_stem = safe_stem
+    counter = 1
+    while (hedef_klasor / f"{candidate_stem}.rttm").exists() or (hedef_klasor / f"{candidate_stem}.wav").exists():
+        candidate_stem = f"{safe_stem}_{counter}"
+        counter += 1
+
+    dest_wav = hedef_klasor / f"{candidate_stem}.wav"
+    dest_rttm = hedef_klasor / f"{candidate_stem}.rttm"
 
     logger.info("Audacity etiketleri okunuyor: %s", etiket_path.name)
     labels = read_audacity_label_file(etiket_path)
     if not labels:
         logger.warning("Etiket dosyasında hiçbir konuşmacı etiketi bulunamadı!")
 
-    rttm_lines = audacity_labels_to_rttm(labels, safe_stem)
+    rttm_lines = audacity_labels_to_rttm(labels, candidate_stem)
     with open(dest_rttm, "w", encoding="utf-8") as f_rttm:
         f_rttm.writelines(rttm_lines)
 
@@ -224,6 +243,88 @@ def cmd_kaydet(
     print(f"\n[BAŞARILI] Test setine kaydedildi:")
     print(f" - Hedef WAV : {dest_wav.absolute()}")
     print(f" - Hedef RTTM: {dest_rttm.absolute()} ({len(rttm_lines)} segment, Konuşmacılar: {unique_speakers})")
+
+
+def cmd_onayla(
+    bekleyen_klasor: Path | None = None,
+    hedef_klasor: Path | None = None,
+    dosya: str | None = None,
+):
+    """
+    real_turkish/_bekleyen/ altındaki dosyaları inceler, doğrular ve real_turkish test setine aktarır.
+    Aynı isimde dosya varsa üzerine yazmaz, numara ekler.
+    """
+    if bekleyen_klasor is None:
+        bekleyen_klasor = Path("tests/fixtures/diarization_eval/real_turkish/_bekleyen")
+    if hedef_klasor is None:
+        hedef_klasor = Path("tests/fixtures/diarization_eval/real_turkish")
+
+    if not bekleyen_klasor.exists():
+        logger.info("Bekleyen klasörü bulunamadı veya boş: %s", bekleyen_klasor)
+        return
+
+    hedef_klasor.mkdir(parents=True, exist_ok=True)
+
+    rttm_files = sorted(list(bekleyen_klasor.glob("*.rttm")))
+    if dosya:
+        rttm_files = [f for f in rttm_files if dosya in f.name]
+
+    if not rttm_files:
+        logger.info("Bekleyen onay kuyruğunda uygun RTTM dosyası bulunamadı.")
+        return
+
+    logger.info("Onay kuyruğunda %d dosya inceleniyor...", len(rttm_files))
+    approved_count = 0
+
+    for rttm_f in rttm_files:
+        stem = rttm_f.stem
+        wav_f = bekleyen_klasor / f"{stem}.wav"
+
+        # Dosya doğrulaması
+        if not wav_f.exists():
+            logger.warning("Eşleşen WAV dosyası bulunamadı, atlanıyor: %s", rttm_f.name)
+            continue
+
+        # RTTM içeriğini oku ve doğrula
+        labels = rttm_to_audacity_labels(rttm_f)
+        if not labels:
+            logger.warning("RTTM dosyası boş veya geçersiz, atlanıyor: %s", rttm_f.name)
+            continue
+
+        # Hedefte aynı isim varsa üzerine yazma
+        candidate_stem = stem
+        counter = 1
+        while (hedef_klasor / f"{candidate_stem}.rttm").exists() or (hedef_klasor / f"{candidate_stem}.wav").exists():
+            candidate_stem = f"{stem}_{counter}"
+            counter += 1
+
+        dest_rttm = hedef_klasor / f"{candidate_stem}.rttm"
+        dest_wav = hedef_klasor / f"{candidate_stem}.wav"
+
+        # Eğer candidate_stem değiştiyse RTTM içindeki URI'leri de güncelle
+        if candidate_stem != stem:
+            rttm_lines = audacity_labels_to_rttm(labels, candidate_stem)
+            with open(dest_rttm, "w", encoding="utf-8") as f_out:
+                f_out.writelines(rttm_lines)
+            shutil.copy2(wav_f, dest_wav)
+        else:
+            shutil.copy2(rttm_f, dest_rttm)
+            shutil.copy2(wav_f, dest_wav)
+
+        # Bekleyen klasöründen temizle
+        rttm_f.unlink(missing_ok=True)
+        wav_f.unlink(missing_ok=True)
+
+        approved_count += 1
+        logger.info(
+            "[ONAYLANDI] %s -> %s (%d segment, %s)",
+            stem,
+            dest_rttm.name,
+            len(labels),
+            sorted(list({lbl[2] for lbl in labels})),
+        )
+
+    print(f"\n[TAMAMLANDI] Toplam {approved_count} dosya onaylanıp test setine eklendi ({hedef_klasor}).")
 
 
 def main():
@@ -249,6 +350,12 @@ def main():
     p_kaydet.add_argument("--etiket", type=Path, required=True, help="Audacity'den dışa aktarılan .txt etiket dosyası")
     p_kaydet.add_argument("--hedef-klasor", type=Path, default=None, help="Nihai test seti dizini (varsayılan: tests/fixtures/diarization_eval/real_turkish)")
 
+    # onayla
+    p_onayla = subparsers.add_parser("onayla", help="Bekleyen klasöründeki (_bekleyen) etiket ve sesleri onaylayıp test setine aktarır")
+    p_onayla.add_argument("--bekleyen-klasor", type=Path, default=None, help="Bekleyen klasörü (varsayılan: tests/fixtures/diarization_eval/real_turkish/_bekleyen)")
+    p_onayla.add_argument("--hedef-klasor", type=Path, default=None, help="Nihai test seti dizini (varsayılan: tests/fixtures/diarization_eval/real_turkish)")
+    p_onayla.add_argument("--dosya", type=str, default=None, help="Yalnızca belirtilen ada sahip dosyayı onayla")
+
     args = parser.parse_args()
 
     if args.subcommand == "hazirla":
@@ -269,6 +376,12 @@ def main():
             ses_path=args.ses,
             etiket_path=args.etiket,
             hedef_klasor=args.hedef_klasor,
+        )
+    elif args.subcommand == "onayla":
+        cmd_onayla(
+            bekleyen_klasor=args.bekleyen_klasor,
+            hedef_klasor=args.hedef_klasor,
+            dosya=args.dosya,
         )
 
 

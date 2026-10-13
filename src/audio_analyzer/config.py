@@ -72,6 +72,9 @@ class Settings:
     result_retention_days: int = field(
         default_factory=lambda: int(os.getenv("RESULT_RETENTION_DAYS", "30"))
     )
+    enable_dataset_export: bool = field(
+        default_factory=lambda: os.getenv("ENABLE_DATASET_EXPORT", "false").lower() == "true"
+    )
 
     # 3. Mesajlaşma & Kuyruk
     use_redis_stream: bool = field(

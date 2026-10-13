@@ -583,7 +583,7 @@
                     <button style="background: rgba(16, 185, 129, 0.2); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4); padding: 0.4rem 0.85rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600; cursor: pointer;" onclick="exportAsTxt()">📄 TXT İndir</button>
                     <button style="background: rgba(59, 130, 246, 0.2); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.4); padding: 0.4rem 0.85rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600; cursor: pointer;" onclick="exportAsSrt()">🎬 SRT İndir</button>
                     <button style="background: rgba(245, 158, 11, 0.2); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.4); padding: 0.4rem 0.85rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600; cursor: pointer;" onclick="exportAsJson()">📊 JSON İndir</button>
-                    <button style="background: rgba(139, 92, 246, 0.25); color: #c4b5fd; border: 1px solid rgba(139, 92, 246, 0.5); padding: 0.4rem 0.85rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600; cursor: pointer;" onclick="exportCurrentJobAsRttm()">📥 Gerçek Test Setine Kaydet (RTTM)</button>
+                    <button style="background: rgba(139, 92, 246, 0.25); color: #c4b5fd; border: 1px solid rgba(139, 92, 246, 0.5); padding: 0.4rem 0.85rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600; cursor: pointer;" onclick="exportCurrentJobAsRttm()">📥 Test Setine Ekle (RTTM)</button>
                     <button style="background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); padding: 0.4rem 0.85rem; border-radius: 0.5rem; font-size: 0.8rem; font-weight: 600; cursor: pointer;" onclick="deleteCurrentJob()">🗑️ Analizi Sil</button>
                 </div>
             </div>
@@ -708,6 +708,65 @@
                 });
                 cleanup();
                 onSubmit(results);
+            };
+            cancelBtn.onclick = cleanup;
+        }
+
+        function showDatasetExportModal(onSubmit) {
+            const backdrop = document.getElementById('customModalBackdrop');
+            const titleElem = document.getElementById('modalTitle');
+            const bodyElem = document.getElementById('modalBody');
+            const confirmBtn = document.getElementById('modalConfirmBtn');
+            const cancelBtn = document.getElementById('modalCancelBtn');
+
+            titleElem.innerHTML = `📥 Test Setine Ekleme Onayı`;
+            bodyElem.innerHTML = `
+                <p style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 1rem; line-height: 1.4;">
+                    Bu işlem, bu kaydı ve düzeltilmiş etiketleri onay kuyruğuna (<code>real_turkish/_bekleyen/</code>) aktarır. Yetkili incelemesinden sonra test setine dahil edilir.
+                </p>
+                <div style="margin-bottom: 0.85rem;">
+                    <label style="font-size: 0.85rem; color: #cbd5e1; display: block; margin-bottom: 0.25rem; font-weight: 600;">Kontrol Eden Kişi Adı (Zorunlu):</label>
+                    <input id="exportReviewerName" type="text" class="modal-input" placeholder="Örn: Adil Çevik">
+                </div>
+                <div style="margin-bottom: 0.85rem;">
+                    <label style="font-size: 0.85rem; color: #cbd5e1; display: block; margin-bottom: 0.25rem;">Notlar (İsteğe bağlı):</label>
+                    <input id="exportNotes" type="text" class="modal-input" placeholder="Örn: Konuşmacı etiketleri düzeltildi">
+                </div>
+                <div style="margin-bottom: 0.5rem; display: flex; align-items: flex-start; gap: 0.5rem; background: rgba(0,0,0,0.25); padding: 0.75rem; border-radius: 0.5rem; border: 1px solid rgba(255,255,255,0.08);">
+                    <input id="exportConsent" type="checkbox" style="margin-top: 0.2rem; cursor: pointer;">
+                    <label for="exportConsent" style="font-size: 0.82rem; color: #e2e8f0; cursor: pointer; line-height: 1.35;">
+                        <strong>Kayıttaki kişilerin rızası alındı.</strong> Bu ses ve etiketlerin model değerlendirme amacıyla test setinde saklanmasını onaylıyorum.
+                    </label>
+                </div>
+            `;
+
+            confirmBtn.className = 'btn-modal-confirm btn-primary';
+            confirmBtn.textContent = 'Onayla ve Kuyruğa Ekle';
+
+            backdrop.style.display = 'flex';
+
+            const cleanup = () => {
+                backdrop.style.display = 'none';
+                confirmBtn.onclick = null;
+                cancelBtn.onclick = null;
+            };
+
+            confirmBtn.onclick = () => {
+                const reviewer = (document.getElementById('exportReviewerName')?.value || '').trim();
+                const notes = (document.getElementById('exportNotes')?.value || '').trim();
+                const consent = document.getElementById('exportConsent')?.checked || false;
+
+                if (!reviewer) {
+                    showToast('Lütfen kontrol eden kişinin adını giriniz!', 'error');
+                    return;
+                }
+                if (!consent) {
+                    showToast('Kayıttaki kişilerin rızasının alındığı onaylanmalıdır!', 'error');
+                    return;
+                }
+
+                cleanup();
+                onSubmit({ reviewer_name: reviewer, consent_confirmed: consent, notes: notes });
             };
             cancelBtn.onclick = cleanup;
         }
@@ -1209,7 +1268,7 @@
                         body: JSON.stringify({ speaker_id: selectElem.value, text: textElem.innerText })
                     });
                     if (res.ok) {
-                        showToast('Değişiklikler ve real_turkish RTTM seti başarıyla kaydedildi!', 'success');
+                        showToast('Değişiklikler başarıyla kaydedildi!', 'success');
                     } else {
                         const errData = await res.json().catch(() => ({}));
                         showToast(errData.detail || 'Kaydetme başarısız!', 'error');
@@ -1226,21 +1285,26 @@
                 showToast('Aktarılacak aktif analiz bulunamadı!', 'error');
                 return;
             }
-            try {
-                const res = await apiFetch(`/api/v1/jobs/${currentJobData.job_id}/export-rttm`, {
-                    method: 'POST'
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    showToast('Düzeltilmiş RTTM ve ses real_turkish test setine kaydedildi!', 'success');
-                } else {
-                    const err = await res.json().catch(() => ({}));
-                    showToast(err.detail || 'RTTM aktarımı başarısız!', 'error');
+
+            showDatasetExportModal(async (formData) => {
+                try {
+                    const res = await apiFetch(`/api/v1/jobs/${currentJobData.job_id}/export-rttm`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(formData)
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        showToast('Düzeltilmiş kayıt başarıyla inceleme kuyruğuna (_bekleyen) aktarıldı!', 'success');
+                    } else {
+                        const err = await res.json().catch(() => ({}));
+                        showToast(err.detail || 'RTTM aktarımı başarısız!', 'error');
+                    }
+                } catch (e) {
+                    console.error(e);
+                    showToast('Sunucu bağlantı hatası!', 'error');
                 }
-            } catch (e) {
-                console.error(e);
-                showToast('Sunucu bağlantı hatası!', 'error');
-            }
+            });
         }
 
         function formatTime(seconds) {
