@@ -1,9 +1,9 @@
 import logging
 from typing import List, Optional
 
-from audio_analyzer.api.metrics import DIARIZATION_FALLBACK_COUNTER
 from audio_analyzer.domain.interfaces import IDiarizer
 from audio_analyzer.domain.models import DiarizationSegment
+from audio_analyzer.utils.metrics import DIARIZATION_FALLBACK_COUNTER
 
 logger = logging.getLogger(__name__)
 

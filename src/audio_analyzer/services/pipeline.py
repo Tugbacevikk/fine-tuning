@@ -10,8 +10,8 @@ import numpy as np
 import scipy.signal
 import soundfile as sf
 
-from audio_analyzer.api.metrics import STAGE_DURATION_HISTOGRAM
 from audio_analyzer.config import get_settings
+from audio_analyzer.utils.metrics import STAGE_DURATION_HISTOGRAM
 from audio_analyzer.domain.interfaces import (
     IAudioDenoiser,
     IAudioProcessor,

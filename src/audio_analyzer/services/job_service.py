@@ -4,10 +4,10 @@ import logging
 import re
 import uuid
 
-from audio_analyzer.api.metrics import JOB_STATUS_COUNTER
 from audio_analyzer.domain.interfaces import IAudioStorage, ITranscriptRepository
 from audio_analyzer.domain.models import AudioRecord, JobStatus
 from audio_analyzer.services.pipeline import AudioAnalysisPipeline
+from audio_analyzer.utils.metrics import JOB_STATUS_COUNTER
 
 logger = logging.getLogger(__name__)
 

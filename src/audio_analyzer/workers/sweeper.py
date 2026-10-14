@@ -17,8 +17,8 @@ import signal
 import uuid
 
 from audio_analyzer.adapters.messaging.redis_stream_adapter import RedisStreamAdapter
+from audio_analyzer.adapters.repository.session import AsyncSessionLocal
 from audio_analyzer.adapters.repository.unit_of_work import SqlAlchemyUnitOfWork
-from audio_analyzer.api.dependencies import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 

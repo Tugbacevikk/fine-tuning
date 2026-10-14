@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from audio_analyzer.api.dependencies import get_uow_with_engine, init_engine
+from audio_analyzer.adapters.repository.session import get_uow_with_engine, init_engine
 
 load_dotenv()
 logger = logging.getLogger("webhook_worker")

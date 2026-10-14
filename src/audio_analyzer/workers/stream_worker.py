@@ -9,7 +9,6 @@ import uuid
 from audio_analyzer.adapters.messaging.redis_stream_adapter import RedisStreamAdapter
 from audio_analyzer.adapters.repository.unit_of_work import SqlAlchemyUnitOfWork
 from audio_analyzer.adapters.storage.storage_factory import get_storage_adapter
-from audio_analyzer.api.dependencies import AsyncSessionLocal
 from audio_analyzer.services.job_service import JobService
 from audio_analyzer.services.pipeline_factory import get_shared_pipeline
 
@@ -71,7 +70,7 @@ class RedisStreamWorker:
 
         hb_task = asyncio.create_task(self._heartbeat_loop(msg_id))
         try:
-            from audio_analyzer.api.dependencies import AsyncSessionLocal
+            from audio_analyzer.adapters.repository.session import AsyncSessionLocal
 
             record_id = uuid.UUID(job_id_str)
             uow = SqlAlchemyUnitOfWork(session_factory=AsyncSessionLocal)
