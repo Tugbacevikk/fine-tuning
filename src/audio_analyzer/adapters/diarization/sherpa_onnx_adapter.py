@@ -16,6 +16,16 @@ logger = logging.getLogger(__name__)
 _UNSET = object()
 
 
+class _SegmentWrapper:
+    __slots__ = ("start", "end", "speaker", "duration")
+
+    def __init__(self, start: float, end: float, speaker: int | str):
+        self.start = float(start)
+        self.end = float(end)
+        self.speaker = speaker
+        self.duration = float(end - start)
+
+
 class SherpaOnnxAudioAdapter(IDiarizer):
     """
     Sherpa-ONNX Konuşmacı Ayrıştırma Motoru Adaptörü (%100 Çevrimdışı, CPU-Optimized, Token-Free).
@@ -281,7 +291,78 @@ class SherpaOnnxAudioAdapter(IDiarizer):
                 target_num_speakers if target_num_speakers is not None and target_num_speakers > 0 else -1
             )
 
-            # Thread-safe set_config + process çağrısı
+            # Dinamik konuşmacı sayısı tahmini (Opt-in via ESTIMATE_NUM_SPEAKERS=true)
+            estimate_speakers = os.getenv("ESTIMATE_NUM_SPEAKERS", "false").lower() == "true"
+            if target_clusters == -1 and estimate_speakers and self._embedding_extractor is not None:
+                try:
+                    # 1. Pipeline'ı tek geçişle çalıştır (num_clusters=-1)
+                    with self._lock:
+                        if self._config is not None and self._config.clustering.num_clusters != -1:
+                            self._config.clustering.num_clusters = -1
+                            self._pipeline.set_config(self._config)
+                        raw_result = self._pipeline.process(samples)
+                        raw_segments = list(raw_result.sort_by_start_time())
+
+                    # 2. Segment embedding'lerini çıkar (Tek geçiş, kümeleme ve estimator için ortak)
+                    from audio_analyzer.services.speaker_count_estimator import SpeakerCountEstimator
+                    from sklearn.cluster import AgglomerativeClustering
+                    estimator = SpeakerCountEstimator()
+
+                    embs = []
+                    durs = []
+                    valid_indices = []
+                    sr = 16000
+                    for idx, s in enumerate(raw_segments):
+                        dur = float(s.end - s.start)
+                        if dur >= 0.2:
+                            st = max(0, int(s.start * sr))
+                            en = min(len(samples), int(s.end * sr))
+                            if en > st + 1600:
+                                stream = self._embedding_extractor.create_stream()
+                                stream.accept_waveform(sr, samples[st:en])
+                                stream.input_finished()
+                                v = np.array(self._embedding_extractor.compute(stream), dtype=np.float32)
+                                n = np.linalg.norm(v)
+                                if n > 1e-12:
+                                    embs.append(v / n)
+                                    durs.append(dur)
+                                    valid_indices.append(idx)
+
+                    if embs:
+                        X_emb = np.array(embs)
+                        estimated_k, details = estimator.estimate_from_embeddings(X_emb, durs)
+                        logger.info("Sherpa-ONNX Dinamik Tahmin: k=%d seçildi (Kural: %s)", estimated_k, details.get("decision_rule"))
+
+                        # 3. İkinci Sherpa C++ motoru çağrısını önle: Scikit-Learn ile doğrudan kümele (< 1ms)
+                        clu = AgglomerativeClustering(n_clusters=estimated_k, metric="cosine", linkage="average")
+                        cluster_labels = clu.fit_predict(X_emb)
+
+                        # Konuşmacı merkez embedding'lerini downstream merger için önbelleğe al
+                        spk_centroids: dict[str, np.ndarray] = {}
+                        for k_idx in range(estimated_k):
+                            mask = (cluster_labels == k_idx)
+                            if np.any(mask):
+                                c = np.mean(X_emb[mask], axis=0)
+                                spk_centroids[f"SPEAKER_{k_idx:02d}"] = c / (np.linalg.norm(c) + 1e-12)
+                        self.last_speaker_embeddings = spk_centroids
+
+                        # Segmentleri yeni küme etiketleri ile sarmala
+                        assigned = {valid_indices[i]: cluster_labels[i] for i in range(len(valid_indices))}
+                        last_lbl = 0
+                        adapted_segments = []
+                        for idx, s in enumerate(raw_segments):
+                            lbl = assigned.get(idx)
+                            if lbl is None:
+                                lbl = last_lbl
+                            else:
+                                last_lbl = lbl
+                            adapted_segments.append(_SegmentWrapper(start=s.start, end=s.end, speaker=lbl))
+
+                        return self._apply_cluster_preservation_filter(adapted_segments, estimated_k)
+                except Exception as est_err:
+                    logger.warning("Sherpa-ONNX dinamik konuşmacı sayısı tahmininde hata, standart akışa düşülüyor: %s", est_err)
+
+            # Standart sabit eşikli tek geçişli çalıştırma
             with self._lock:
                 if self._config is not None and self._config.clustering.num_clusters != target_clusters:
                     self._config.clustering.num_clusters = target_clusters
@@ -306,6 +387,12 @@ class SherpaOnnxAudioAdapter(IDiarizer):
         """
         if not segments:
             return {}
+
+        # Önbellekte tüm konuşmacıların embedding'leri zaten mevcutsa doğrudan dön (Tekrar çıkarmayı önle)
+        if self.last_speaker_embeddings:
+            needed = {s.speaker_id for s in segments}
+            if needed.issubset(self.last_speaker_embeddings.keys()):
+                return self.last_speaker_embeddings
         try:
             samples = self._prepare_samples(audio_input)
             if len(samples) == 0:

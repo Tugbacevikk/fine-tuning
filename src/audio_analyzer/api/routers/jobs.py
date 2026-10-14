@@ -20,7 +20,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, Response
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from audio_analyzer.adapters.messaging.redis_stream_adapter import RedisStreamAdapter
 from audio_analyzer.adapters.storage.storage_factory import get_storage_adapter
@@ -134,6 +134,10 @@ class DatasetExportRequest(BaseModel):
     reviewer_name: str
     consent_confirmed: bool
     notes: str | None = None
+
+
+class ReanalyzeJobRequest(BaseModel):
+    num_speakers: int = Field(..., ge=1, le=10, description="Düzeltilen yeni konuşmacı sayısı (1-10).")
 
 
 # --- Endpoints ---
@@ -429,6 +433,90 @@ async def get_job_audio_file(
         detail=f"'{record.file_name}' ses dosyası depolamada bulunamadı (saklama süresi/retention dolmuş veya silinmiş olabilir)."
     )
 
+
+@router.post("/jobs/{job_id}/reanalyze", response_model=JobCreateResponse, status_code=202)
+async def reanalyze_audio_job(
+    job_id: str,
+    payload: ReanalyzeJobRequest,
+    background_tasks: BackgroundTasks,
+    repository: ITranscriptRepository = Depends(get_repository),
+    _api_key: str | None = Depends(verify_api_key),
+):
+    """
+    Sunucuda kayıtlı ses dosyasını (storage_uri) kullanarak analizi yeni konuşmacı sayısı ile yeniden başlatır.
+    Tarayıcıda dosya verisi tutulmasına gerek kalmaz; sayfa yenilense de çalışır.
+    """
+    try:
+        record_uuid = uuid.UUID(job_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Geçersiz UUID formatı.")
+
+    record = await repository.get_record_by_id(record_uuid)
+    if not record:
+        raise HTTPException(status_code=404, detail="Ses analizi görevi bulunamadı.")
+
+    storage = get_storage_adapter()
+    file_bytes = None
+    try:
+        local_path = storage.get_path(record.storage_uri)
+        if local_path and os.path.exists(local_path):
+            with open(local_path, "rb") as f:
+                file_bytes = f.read()
+    except Exception:
+        pass
+
+    if file_bytes is None:
+        candidate_dirs = [
+            Path(get_settings().storage_dir) if hasattr(get_settings(), "storage_dir") else None,
+            Path("storage/raw"),
+            Path("storage"),
+            Path("Yeni klasör"),
+            Path("tests/fixtures"),
+        ]
+        for c_dir in candidate_dirs:
+            if c_dir and c_dir.exists() and record.file_name:
+                cand = (c_dir / record.file_name).resolve()
+                if cand.exists() and cand.is_file():
+                    with open(cand, "rb") as f:
+                        file_bytes = f.read()
+                    break
+
+    if not file_bytes:
+        raise HTTPException(
+            status_code=404,
+            detail=f"'{record.file_name}' ses dosyası sunucuda bulunamadı (silinmiş veya taşınmış olabilir).",
+        )
+
+    job_service = JobService(storage=storage, repository=repository)
+    new_job = await job_service.create_job(
+        file_name=record.file_name,
+        file_bytes=file_bytes,
+        num_speakers=payload.num_speakers,
+    )
+
+    use_redis_stream = os.getenv("USE_REDIS_STREAM", "false").lower() == "true" or os.getenv("USE_REDIS_QUEUE", "false").lower() == "true"
+    if use_redis_stream:
+        stream_adapter = RedisStreamAdapter()
+        await stream_adapter.publish_job(
+            job_id=str(new_job.id),
+            file_name=record.file_name,
+            num_speakers=payload.num_speakers,
+        )
+    else:
+        background_tasks.add_task(
+            run_pipeline_background,
+            str(new_job.id),
+            record.file_name,
+            file_bytes,
+            payload.num_speakers,
+        )
+
+    return JobCreateResponse(
+        job_id=str(new_job.id),
+        file_name=record.file_name,
+        status="PENDING",
+        message=f"Ses analizi {payload.num_speakers} konuşmacı ile sunucu üzerinden yeniden başlatıldı.",
+    )
 
 
 @router.delete("/jobs/{job_id}")

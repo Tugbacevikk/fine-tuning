@@ -151,7 +151,7 @@ def get_web_ui():
     index_path = STATIC_DIR / "index.html"
     if not index_path.exists():
         raise HTTPException(status_code=404, detail="Web arayüzü dosyası bulunamadı")
-    return FileResponse(index_path)
+    return FileResponse(index_path, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 @app.get("/favicon.ico", include_in_schema=False)
