@@ -55,7 +55,9 @@ async def test_full_job_service_pipeline_e2e(tmp_path, in_memory_db):
     buf = io.BytesIO()
     sf.write(buf, np.zeros(80000, dtype=np.int16), 16000, format="WAV", subtype="PCM_16")
     mock_audio_bytes = buf.getvalue()
-    job_id = await job_service.create_job(file_name="ornek_cagri.wav", file_bytes=mock_audio_bytes)
+    job_id = await job_service.create_job(
+        file_name="ornek_cagri.wav", file_bytes=mock_audio_bytes, num_speakers=2
+    )
 
     record_pending = await repository.get_record_by_id(job_id)
     assert record_pending is not None

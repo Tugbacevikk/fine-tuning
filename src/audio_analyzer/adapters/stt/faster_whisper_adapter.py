@@ -66,11 +66,8 @@ class FasterWhisperAdapter(ISTTEngine):
         batch_size = settings.whisper_batch_size
         vad_params = dict(min_silence_duration_ms=1000, speech_pad_ms=400)
 
-        prompt_str = self.initial_prompt or (
-            "Türkçe ses kaydı."
-            if language == "tr"
-            else None
-        )
+        custom_prompt = os.getenv("WHISPER_INITIAL_PROMPT", "").strip()
+        prompt_str = self.initial_prompt or (custom_prompt if custom_prompt else None)
 
         use_vad_filter = settings.enable_vad_filter
         hotwords_raw = os.getenv("WHISPER_HOTWORDS", "").strip() or settings.whisper_hotwords

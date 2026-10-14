@@ -940,7 +940,11 @@
                     } else if (job.status === 'PENDING') {
                         const elapsedSec = (Date.now() - currentPollStartTime) / 1000;
                         if (statusTitle) statusTitle.textContent = 'Analiz Sırada Bekliyor...';
-                        if (statusDesc) statusDesc.textContent = `İşlem kuyruğa alındı, işleyici bekleniyor (${Math.round(elapsedSec)} sn)...`;
+                        if (job.error_message) {
+                            if (statusDesc) statusDesc.textContent = `İşleyici uyarısı: ${job.error_message} (${Math.round(elapsedSec)} sn)...`;
+                        } else {
+                            if (statusDesc) statusDesc.textContent = `İşlem kuyruğa alındı, işleyici bekleniyor (${Math.round(elapsedSec)} sn)...`;
+                        }
                         if (elapsedSec > 300) {
                             const banner = document.getElementById('workerAlertBanner');
                             if (banner) {

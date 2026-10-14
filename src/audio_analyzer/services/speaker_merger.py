@@ -92,6 +92,10 @@ class SpeakerClusterMerger:
                 small_speakers = set(sorted_small[:allowed_removals])
 
         if not small_speakers:
+            if num_speakers is not None and num_speakers > 0 and len(unique_speakers) > num_speakers:
+                return self._enforce_target_num_speakers(
+                    segments, target_num_speakers=num_speakers, speaker_embeddings=speaker_embeddings
+                )
             return segments
 
         major_speakers = [s for s in unique_speakers if s not in small_speakers]
@@ -122,7 +126,7 @@ class SpeakerClusterMerger:
                                 best_sim = sim
                                 best_maj = maj_spk
                     if best_maj is not None:
-                        if best_sim < self.similarity_threshold:
+                        if best_sim < self.similarity_threshold and (num_speakers is None or num_speakers <= 0):
                             logger.info(
                                 "SpeakerClusterMerger: Konuşmacı '%s' (%.2fs) en yakın konuşmacı '%s' ile düşük benzerlik gösterdi (%.2f < %.2f). Birleştirme İPTAL EDİLDİ ve bağımsız konuşmacı olarak korundu.",
                                 small_spk,
@@ -145,6 +149,10 @@ class SpeakerClusterMerger:
 
         small_speakers = small_speakers - cancelled_merges
         if not small_speakers:
+            if num_speakers is not None and num_speakers > 0 and len(unique_speakers) > num_speakers:
+                return self._enforce_target_num_speakers(
+                    segments, target_num_speakers=num_speakers, speaker_embeddings=speaker_embeddings
+                )
             return segments
 
         for small_spk in list(small_speakers):
@@ -179,7 +187,17 @@ class SpeakerClusterMerger:
 
         # Zamana göre sırala ve bitişik segmentleri birleştir
         new_segments.sort(key=lambda s: s.start_time)
-        return self._merge_adjacent_segments(new_segments)
+        merged = self._merge_adjacent_segments(new_segments)
+
+        # 4. num_speakers kısıtı: Eğer hâlâ küme sayısı num_speakers'tan fazlaysa
+        # (Örn: Doğal eşikleme 3 büyük küme buldu ama kullanıcı 2 kişi istedi),
+        # embedding benzerliği en yüksek olan iki konuşmacıyı hedef sayıya ulaşana kadar birleştir.
+        if num_speakers is not None and num_speakers > 0:
+            merged = self._enforce_target_num_speakers(
+                merged, target_num_speakers=num_speakers, speaker_embeddings=speaker_embeddings
+            )
+
+        return merged
 
     def _find_nearest_major_speaker(
         self, seg: DiarizationSegment, major_segments: list[DiarizationSegment]
@@ -227,3 +245,113 @@ class SpeakerClusterMerger:
                 merged.append(curr)
 
         return merged
+
+    def _enforce_target_num_speakers(
+        self,
+        segments: list[DiarizationSegment],
+        target_num_speakers: int,
+        speaker_embeddings: dict[str, np.ndarray] | None = None,
+    ) -> list[DiarizationSegment]:
+        """
+        Kullanıcı hedef konuşmacı sayısı (num_speakers) belirttiğinde ve mevcut küme sayısı
+        bu sayıdan fazla olduğunda, embedding kosinüs benzerliği en yüksek olan çiftleri
+        ardışık olarak birleştirerek tam olarak hedef sayıya indirger.
+        """
+        unique_spks = sorted(list(set(s.speaker_id for s in segments)))
+        if len(unique_spks) <= target_num_speakers:
+            return segments
+
+        embs = {k: v.copy() for k, v in speaker_embeddings.items()} if speaker_embeddings else {}
+        spk_target_map = {s: s for s in unique_spks}
+        current_spks = set(unique_spks)
+
+        # Konuşmacı sürelerini hesapla
+        spk_durs: dict[str, float] = {}
+        for s in segments:
+            dur = max(0.0, s.end_time - s.start_time)
+            spk_durs[s.speaker_id] = spk_durs.get(s.speaker_id, 0.0) + dur
+
+        # Embedding'i bulunmayan mikro/artık konuşmacıları öncelikle en yakın konuşmacıya bağla
+        missing_embs = [s for s in list(current_spks) if s not in embs]
+        for m in missing_embs:
+            if len(current_spks) <= target_num_speakers:
+                break
+            m_segs = [s for s in segments if s.speaker_id == m]
+            ref_segs = [s for s in segments if s.speaker_id in embs]
+            if m_segs and ref_segs:
+                target_maj = self._find_nearest_major_speaker(m_segs[0], ref_segs)
+            else:
+                target_maj = max(current_spks - {m}, key=lambda s: spk_durs.get(s, 0.0))
+            logger.info("SpeakerClusterMerger (Target num_speakers=%d): Embedding'siz mikro konuşmacı '%s' -> '%s' ile birleştirildi.", target_num_speakers, m, target_maj)
+            for k in list(spk_target_map.keys()):
+                if spk_target_map[k] == m:
+                    spk_target_map[k] = target_maj
+            current_spks.remove(m)
+            spk_durs[target_maj] = spk_durs.get(target_maj, 0.0) + spk_durs.get(m, 0.0)
+
+        while len(current_spks) > target_num_speakers and len(current_spks) >= 2:
+            best_pair = None
+            best_sim = -1.0
+            spk_list = sorted(list(current_spks))
+
+            # 1. Eğer embedding'ler varsa en yüksek kosinüs benzerliğine göre eşleş
+            if len(embs) >= 2:
+                for i in range(len(spk_list)):
+                    s1 = spk_list[i]
+                    if s1 not in embs:
+                        continue
+                    v1 = embs[s1] / (np.linalg.norm(embs[s1]) + 1e-12)
+                    for j in range(i + 1, len(spk_list)):
+                        s2 = spk_list[j]
+                        if s2 not in embs:
+                            continue
+                        v2 = embs[s2] / (np.linalg.norm(embs[s2]) + 1e-12)
+                        sim = float(np.dot(v1, v2))
+                        if sim > best_sim:
+                            best_sim = sim
+                            best_pair = (s1, s2)
+
+            # 2. Embedding yoksa veya bulunamadıysa en kısa süreli konuşmacıyı bir sonrakine bağla
+            if best_pair is None:
+                sorted_by_dur = sorted(spk_list, key=lambda s: spk_durs.get(s, 0.0))
+                best_pair = (sorted_by_dur[1], sorted_by_dur[0])
+                best_sim = 0.0
+
+            s_a, s_b = best_pair
+            # Daha uzun süre konuşan konuşmacının etiketini koru
+            if spk_durs.get(s_a, 0.0) >= spk_durs.get(s_b, 0.0):
+                s_keep, s_drop = s_a, s_b
+            else:
+                s_keep, s_drop = s_b, s_a
+
+            logger.info(
+                "SpeakerClusterMerger (Target num_speakers=%d): '%s' -> '%s' ile birleştirildi (benzerlik: %.4f).",
+                target_num_speakers,
+                s_drop,
+                s_keep,
+                best_sim,
+            )
+
+            for k in list(spk_target_map.keys()):
+                if spk_target_map[k] == s_drop:
+                    spk_target_map[k] = s_keep
+            current_spks.remove(s_drop)
+
+            # Embedding güncelle
+            if s_keep in embs and s_drop in embs:
+                new_v = embs[s_keep] + embs[s_drop]
+                embs[s_keep] = new_v / (np.linalg.norm(new_v) + 1e-12)
+                del embs[s_drop]
+            elif s_drop in embs:
+                del embs[s_drop]
+
+        out_segs = [
+            DiarizationSegment(
+                speaker_id=spk_target_map.get(s.speaker_id, s.speaker_id),
+                start_time=s.start_time,
+                end_time=s.end_time,
+            )
+            for s in segments
+        ]
+        out_segs.sort(key=lambda s: s.start_time)
+        return self._merge_adjacent_segments(out_segs)

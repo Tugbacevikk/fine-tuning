@@ -86,6 +86,7 @@ markers = [
     "system: End-to-end system tests",
     "benchmark: Performance benchmark tests",
     "torch: Tests requiring PyTorch models",
+    "heavy: Tests requiring heavy model downloads or GPU execution",
 ]
 
 [tool.black]

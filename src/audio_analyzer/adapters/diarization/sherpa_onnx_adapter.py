@@ -368,7 +368,29 @@ class SherpaOnnxAudioAdapter(IDiarizer):
                     self._pipeline.set_config(self._config)
 
                 raw_result = self._pipeline.process(samples)
-                raw_segments = raw_result.sort_by_start_time()
+                raw_segments = list(raw_result.sort_by_start_time())
+
+                # C++ FastClustering çökme koruması:
+                # num_clusters > 1 verildiğinde, C++ algoritması konuşmacıların %90+'ını tek kümeye
+                # toplayıp diğerini yok edebiliyor (örn: 87s vs 1.2s). Bu durumda doğal eşiklemeye (-1) dön.
+                if target_clusters > 1 and raw_segments:
+                    spk_durs = {}
+                    for s in raw_segments:
+                        spk_durs[s.speaker] = spk_durs.get(s.speaker, 0.0) + (s.end - s.start)
+                    tot_d = sum(spk_durs.values())
+                    max_ratio = (max(spk_durs.values()) / tot_d) if tot_d > 0 else 0.0
+                    min_dur = min(spk_durs.values()) if spk_durs else 0.0
+                    if len(spk_durs) > 1 and max_ratio >= 0.90 and (min_dur < 3.0 or min_dur / tot_d < 0.05):
+                        logger.warning(
+                            "Sherpa-ONNX C++ num_clusters=%d algoritma çökmesi tespit edildi (Baskın küme: %.1f%%). Doğal eşikleme (-1) moduna geçiliyor.",
+                            target_clusters,
+                            max_ratio * 100,
+                        )
+                        if self._config is not None:
+                            self._config.clustering.num_clusters = -1
+                            self._pipeline.set_config(self._config)
+                        raw_result = self._pipeline.process(samples)
+                        raw_segments = list(raw_result.sort_by_start_time())
 
             # Python-side min_duration_on & cluster preservation filtresi
             return self._apply_cluster_preservation_filter(raw_segments, target_num_speakers)
