@@ -1,6 +1,5 @@
 import os
 from unittest.mock import MagicMock, patch
-import pytest
 
 from audio_analyzer.adapters.diarization.pyannote_adapter import PyannoteAudioAdapter
 from audio_analyzer.config import get_settings

@@ -9,7 +9,6 @@ import soundfile as sf
 
 from audio_analyzer.domain.interfaces import IDiarizer
 from audio_analyzer.domain.models import DeviceConfig, DiarizationSegment
-from audio_analyzer.utils.cpu_budget import setup_cpu_thread_budget
 
 logger = logging.getLogger(__name__)
 

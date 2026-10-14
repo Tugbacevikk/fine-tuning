@@ -135,6 +135,25 @@ class Settings:
     target_num_speakers: int | None = field(
         default_factory=lambda: _opt_int("TARGET_NUM_SPEAKERS") or _opt_int("NUM_SPEAKERS")
     )
+    # Otomatik Konuşmacı Sayısı Tahmini (Speaker Count Estimation)
+    speaker_est_k_max: int = field(
+        default_factory=lambda: int(os.getenv("SPEAKER_EST_K_MAX", "6"))
+    )
+    speaker_est_min_segment_sec: float = field(
+        default_factory=lambda: float(os.getenv("SPEAKER_EST_MIN_SEGMENT_SEC", "1.0"))
+    )
+    speaker_est_centroid_dist_thresh: float = field(
+        default_factory=lambda: float(os.getenv("SPEAKER_EST_CENTROID_DIST_THRESH", "0.18"))
+    )
+    speaker_est_min_silhouette: float = field(
+        default_factory=lambda: float(os.getenv("SPEAKER_EST_MIN_SILHOUETTE", "0.22"))
+    )
+    speaker_est_distinct_centroid_dist: float = field(
+        default_factory=lambda: float(os.getenv("SPEAKER_EST_DISTINCT_CENTROID_DIST", "0.14"))
+    )
+    speaker_estimation_method: str = field(
+        default_factory=lambda: os.getenv("SPEAKER_ESTIMATION_METHOD", "silhouette").lower()
+    )
     max_silence_threshold: float = field(default_factory=lambda: float(os.getenv("MAX_SILENCE_THRESHOLD", "1.5")))
     max_clause_gap: float = field(default_factory=lambda: float(os.getenv("MAX_CLAUSE_GAP", "1.5")))
     enable_denoiser: bool = field(

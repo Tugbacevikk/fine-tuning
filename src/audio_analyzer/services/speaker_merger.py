@@ -1,5 +1,4 @@
 import logging
-import os
 import numpy as np
 
 from audio_analyzer.domain.models import DiarizationSegment

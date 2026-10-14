@@ -1,5 +1,4 @@
 import logging
-import os
 from typing import Any
 import numpy as np
 
@@ -30,28 +29,36 @@ class SpeakerCountEstimator:
 
     def __init__(
         self,
-        k_max: int = 6,
-        min_segment_sec: float = 1.0,
-        single_speaker_centroid_dist: float = 0.18,
-        min_silhouette_threshold: float = 0.22,
-        min_distinct_centroid_dist: float = 0.14,
+        k_max: int | None = None,
+        min_segment_sec: float | None = None,
+        single_speaker_centroid_dist: float | None = None,
+        min_silhouette_threshold: float | None = None,
+        min_distinct_centroid_dist: float | None = None,
         method: str | None = None,
     ):
         from audio_analyzer.config import get_settings
         settings = get_settings()
 
-        self.k_max = int(os.getenv("SPEAKER_EST_K_MAX", str(k_max)))
-        self.min_segment_sec = float(os.getenv("SPEAKER_EST_MIN_SEGMENT_SEC", str(min_segment_sec)))
-        self.single_speaker_centroid_dist = float(
-            os.getenv("SPEAKER_EST_CENTROID_DIST_THRESH", str(single_speaker_centroid_dist))
+        self.k_max = k_max if k_max is not None else settings.speaker_est_k_max
+        self.min_segment_sec = (
+            min_segment_sec if min_segment_sec is not None else settings.speaker_est_min_segment_sec
         )
-        self.min_silhouette_threshold = float(
-            os.getenv("SPEAKER_EST_MIN_SILHOUETTE", str(min_silhouette_threshold))
+        self.single_speaker_centroid_dist = (
+            single_speaker_centroid_dist
+            if single_speaker_centroid_dist is not None
+            else settings.speaker_est_centroid_dist_thresh
         )
-        self.min_distinct_centroid_dist = float(
-            os.getenv("SPEAKER_EST_DISTINCT_CENTROID_DIST", str(min_distinct_centroid_dist))
+        self.min_silhouette_threshold = (
+            min_silhouette_threshold
+            if min_silhouette_threshold is not None
+            else settings.speaker_est_min_silhouette
         )
-        self.method = method or os.getenv("SPEAKER_ESTIMATION_METHOD", "silhouette").lower()
+        self.min_distinct_centroid_dist = (
+            min_distinct_centroid_dist
+            if min_distinct_centroid_dist is not None
+            else settings.speaker_est_distinct_centroid_dist
+        )
+        self.method = (method or settings.speaker_estimation_method).lower()
 
     def estimate_from_embeddings(
         self,
@@ -153,7 +160,6 @@ class SpeakerCountEstimator:
         k2_info = k_results.get(2)
         if k2_info is not None:
             k2_min_cd = k2_info["min_centroid_dist"]
-            k2_sil = k2_info["silhouette"]
 
             # Kural 4a: İki küme merkezi arasındaki kosinüs mesafesi çok düşükse (< 0.18),
             # iki küme aslında aynı kişinin sesidir (benzerlik > %82).

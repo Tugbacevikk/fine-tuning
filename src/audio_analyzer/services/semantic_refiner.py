@@ -1,9 +1,7 @@
 import json
 import logging
-import os
 import re
 import urllib.request
-import uuid
 
 from audio_analyzer.config import get_settings
 from audio_analyzer.domain.models import TranscriptUtterance

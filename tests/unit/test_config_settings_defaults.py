@@ -1,4 +1,3 @@
-import os
 import pytest
 from audio_analyzer.config import get_settings, reset_settings
 

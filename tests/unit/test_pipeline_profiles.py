@@ -75,4 +75,9 @@ async def test_retention_service_cleanup(in_memory_db):
     ret_svc = RetentionService(storage=storage, repository=repository)
     cleaned = await ret_svc.cleanup_expired_audio_files(retention_hours=24)
 
+    assert rec_id is not None
+    assert new_rec_id is not None
     assert cleaned >= 1
+    with pytest.raises(FileNotFoundError):
+        storage.get_bytes(uri_old)
+    assert storage.get_bytes(uri_new) == b"newdata"

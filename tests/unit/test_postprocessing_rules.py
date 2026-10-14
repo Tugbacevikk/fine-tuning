@@ -1,6 +1,4 @@
 import uuid
-import numpy as np
-import pytest
 
 from audio_analyzer.domain.models import DiarizationSegment, TranscriptUtterance, WordSegment
 from audio_analyzer.services.fusion_engine import FusionEngine

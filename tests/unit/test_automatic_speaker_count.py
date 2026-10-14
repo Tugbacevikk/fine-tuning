@@ -77,3 +77,43 @@ async def test_automatic_speaker_count_end_to_end(in_memory_db, monkeypatch):
 
     # Temizlik
     reset_settings()
+
+
+def test_speaker_count_estimator_precedence(monkeypatch):
+    """
+    Doğrulama: Constructor argümanı > config.py / env > varsayılan (0.18 / 0.22 / 0.14)
+    öncelik sırasını test eder.
+    """
+    from audio_analyzer.services.speaker_count_estimator import SpeakerCountEstimator
+
+    # 1. Varsayılanlar
+    monkeypatch.delenv("SPEAKER_EST_CENTROID_DIST_THRESH", raising=False)
+    monkeypatch.delenv("SPEAKER_EST_MIN_SILHOUETTE", raising=False)
+    monkeypatch.delenv("SPEAKER_EST_DISTINCT_CENTROID_DIST", raising=False)
+    reset_settings()
+    est_default = SpeakerCountEstimator()
+    assert est_default.single_speaker_centroid_dist == 0.18
+    assert est_default.min_silhouette_threshold == 0.22
+    assert est_default.min_distinct_centroid_dist == 0.14
+
+    # 2. Config / Env önceliği
+    monkeypatch.setenv("SPEAKER_EST_CENTROID_DIST_THRESH", "0.25")
+    monkeypatch.setenv("SPEAKER_EST_MIN_SILHOUETTE", "0.30")
+    monkeypatch.setenv("SPEAKER_EST_DISTINCT_CENTROID_DIST", "0.20")
+    reset_settings()
+    est_env = SpeakerCountEstimator()
+    assert est_env.single_speaker_centroid_dist == 0.25
+    assert est_env.min_silhouette_threshold == 0.30
+    assert est_env.min_distinct_centroid_dist == 0.20
+
+    # 3. Constructor argümanı env'i ezer (en yüksek öncelik)
+    est_override = SpeakerCountEstimator(
+        single_speaker_centroid_dist=0.12,
+        min_silhouette_threshold=0.15,
+        min_distinct_centroid_dist=0.10,
+    )
+    assert est_override.single_speaker_centroid_dist == 0.12
+    assert est_override.min_silhouette_threshold == 0.15
+    assert est_override.min_distinct_centroid_dist == 0.10
+    reset_settings()
+

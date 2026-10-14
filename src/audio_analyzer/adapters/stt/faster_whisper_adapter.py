@@ -3,7 +3,6 @@ import os
 
 from audio_analyzer.domain.interfaces import ISTTEngine
 from audio_analyzer.domain.models import DeviceConfig, WordSegment
-from audio_analyzer.utils.cpu_budget import setup_cpu_thread_budget
 
 logger = logging.getLogger(__name__)
 

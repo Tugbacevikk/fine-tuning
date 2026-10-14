@@ -230,8 +230,6 @@ class AudioAnalysisPipeline:
         Ortak pipeline yürütme motoru. Hem dosya yolu hem NumPy dizisi ile çalışır.
         STT öncesinde hesaplanan ses süresi ve konuşmacı sayısı ile diarization kararını verir.
         """
-        from audio_analyzer.domain.models import DiarizationSegment
-
         settings = get_settings()
         profile = settings.pipeline_profile
         min_diarize_sec = settings.pipeline_min_diarize_sec

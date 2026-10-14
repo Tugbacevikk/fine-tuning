@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from audio_analyzer.config import get_settings, reset_settings
 from audio_analyzer.adapters.stt.faster_whisper_adapter import FasterWhisperAdapter
 from audio_analyzer.domain.models import DeviceConfig

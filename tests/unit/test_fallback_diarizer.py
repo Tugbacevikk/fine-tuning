@@ -1,4 +1,3 @@
-import pytest
 from audio_analyzer.adapters.diarization.fallback_diarizer import FallbackDiarizer
 from audio_analyzer.domain.interfaces import IDiarizer
 from audio_analyzer.domain.models import DiarizationSegment

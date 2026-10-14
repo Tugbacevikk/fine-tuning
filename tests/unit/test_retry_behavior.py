@@ -2,8 +2,6 @@ import asyncio
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
-
-from audio_analyzer.domain.errors import PermanentJobError
 from audio_analyzer.domain.models import AudioRecord, JobStatus
 from audio_analyzer.services.job_service import JobService
 from audio_analyzer.workers.stream_worker import RedisStreamWorker

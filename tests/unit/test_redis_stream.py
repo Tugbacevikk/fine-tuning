@@ -76,10 +76,7 @@ async def test_redis_stream_worker_message_processing(stream_adapter, monkeypatc
     await stream_adapter.create_consumer_group()
     job_id = str(uuid.uuid4())
     msg_id = await stream_adapter.publish_job(job_id=job_id, file_name="worker_test.wav")
-
-    # Mock JobService.execute_job
-    from unittest.mock import AsyncMock
-    mock_execute = AsyncMock(return_value=True)
+    assert msg_id is not None
 
     worker = RedisStreamWorker(consumer_name="worker_test_unit", adapter=stream_adapter)
 
@@ -93,6 +90,7 @@ async def test_redis_stream_worker_message_processing(stream_adapter, monkeypatc
 
     messages = await stream_adapter.consume_messages(consumer_name=worker.consumer_name, count=1, block_ms=100)
     assert len(messages) == 1
+    assert messages[0][0] == msg_id
     success = await worker.process_single_message(messages[0][0], messages[0][1])
     assert success is True
 
@@ -102,10 +100,12 @@ async def test_redis_stream_claim_pending_messages(stream_adapter):
     await stream_adapter.create_consumer_group()
     job_id = str(uuid.uuid4())
     msg_id = await stream_adapter.publish_job(job_id=job_id, file_name="claim_test.wav")
+    assert msg_id is not None
 
     # worker_1 mesajı okur ama ACK etmez (çöker)
     consumed = await stream_adapter.consume_messages(consumer_name="worker_1", count=1, block_ms=100)
     assert len(consumed) == 1
+    assert consumed[0][0] == msg_id
 
     # claim_pending_messages çağır (min_idle_time_ms=0 for testing)
     claimed = await stream_adapter.claim_pending_messages(consumer_name="worker_2", min_idle_time_ms=0, count=5)

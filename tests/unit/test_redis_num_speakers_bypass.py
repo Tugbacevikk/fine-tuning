@@ -1,11 +1,9 @@
 import io
-import uuid
 import numpy as np
 import pytest
 import soundfile as sf
 from fastapi.testclient import TestClient
 
-from audio_analyzer.adapters.messaging.redis_stream_adapter import RedisStreamAdapter
 from audio_analyzer.adapters.repository.postgres_repository import PostgresRepository
 from audio_analyzer.adapters.storage.in_memory_storage_adapter import InMemoryStorageAdapter
 from audio_analyzer.api.main import app

@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import MagicMock
 
 from audio_analyzer.adapters.diarization.escalating_diarizer import EscalatingDiarizer
