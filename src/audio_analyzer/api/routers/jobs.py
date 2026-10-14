@@ -41,6 +41,56 @@ ALLOWED_EXTENSIONS = {".wav", ".mp3", ".flac", ".m4a", ".ogg"}
 MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB
 
 
+def sanitize_filename(filename: str | None) -> str:
+    """
+    Kullanıcının yüklediği dosya adını temizler:
+    - os.path.basename ile dizin kısımlarını atar (path traversal önler)
+    - Boşsa, "." veya ".." ise varsayılan 'upload.bin' adını verir
+    - Uzunluğu maksimum 255 karakter ile sınırlar
+    """
+    if not filename:
+        return "upload.bin"
+    clean_name = os.path.basename(filename.replace("\\", "/")).strip()
+    if not clean_name or clean_name in (".", ".."):
+        return "upload.bin"
+    return clean_name[:255]
+
+
+def _load_job_audio(storage, record) -> tuple[str | None, bytes | None]:
+    """
+    Kayıtlı ses dosyasını güvenli bir şekilde yalnızca depolama adaptörü (storage_uri) üzerinden yükler.
+    Kesinlikle dosya adına (record.file_name) veya harici klasör yollarına başvurmaz (Path traversal önlemi).
+    Döner: (local_path, file_bytes)
+    """
+    local_path = None
+    file_bytes = None
+
+    if hasattr(storage, "get_path"):
+        try:
+            path = storage.get_path(record.storage_uri)
+            if path and os.path.exists(path):
+                local_path = str(path)
+        except (OSError, FileNotFoundError, KeyError, ValueError) as err:
+            logger.warning("Storage get_path hatası (%s): %s", getattr(record, "storage_uri", None), err)
+
+    if hasattr(storage, "get_bytes"):
+        try:
+            raw_bytes = storage.get_bytes(record.storage_uri)
+            if raw_bytes and len(raw_bytes) > 0:
+                file_bytes = raw_bytes
+        except (OSError, FileNotFoundError, KeyError, ValueError) as err:
+            logger.warning("Storage get_bytes hatası (%s): %s", getattr(record, "storage_uri", None), err)
+
+    if local_path and file_bytes is None:
+        try:
+            with open(local_path, "rb") as f:
+                file_bytes = f.read()
+        except (OSError, FileNotFoundError) as err:
+            logger.warning("Diskteki ses dosyası okunamadı (%s): %s", local_path, err)
+            local_path = None
+
+    return local_path, file_bytes
+
 
 async def verify_api_key(api_key: str | None = Depends(api_key_header)):
     """
@@ -212,10 +262,12 @@ async def upload_and_analyze_audio(
             detail="Yüklenen dosya geçerli ve bozulmamış bir ses dosyası içeriği (WAV, MP3, FLAC, M4A, OGG) taşımıyor.",
         )
 
+    safe_filename = sanitize_filename(file.filename)
+
     storage = get_storage_adapter()
     job_service = JobService(storage=storage, repository=repository)
     job_id = await job_service.create_job(
-        file_name=file.filename,
+        file_name=safe_filename,
         file_bytes=file_bytes,
         callback_url=callback_url,
         external_id=external_id,
@@ -229,7 +281,7 @@ async def upload_and_analyze_audio(
             stream_adapter = RedisStreamAdapter()
             await stream_adapter.publish_job(
                 job_id=str(job_id),
-                file_name=file.filename,
+                file_name=safe_filename,
                 callback_url=callback_url,
                 num_speakers=target_speakers,
             )
@@ -249,12 +301,12 @@ async def upload_and_analyze_audio(
                 "UYARI: Production ortamında in-process BackgroundTasks kullanımı yüksek GPU/CPU yükünde HTTP sunucusunu kilitleyebilir. 'USE_REDIS_STREAM=true' yapılandırılması şiddetle önerilir (Job ID: %s).",
                 job_id
             )
-        background_tasks.add_task(run_pipeline_background, str(job_id), file.filename, file_bytes, target_speakers)
+        background_tasks.add_task(run_pipeline_background, str(job_id), safe_filename, file_bytes, target_speakers)
 
 
     return JobCreateResponse(
         job_id=str(job_id),
-        file_name=file.filename,
+        file_name=safe_filename,
         status="PENDING",
         message="Ses analizi görevi asenkron olarak kuyruğa alındı.",
     )
@@ -376,61 +428,23 @@ async def get_job_audio_file(
         raise HTTPException(status_code=404, detail="Ses analizi görevi bulunamadı.")
 
     storage = get_storage_adapter()
+    local_path, audio_bytes = _load_job_audio(storage, record)
 
-    # 1. Önce diski/yerel yolu dene (HTML5 <audio> Range requests & partial content streaming için FileResponse)
-    try:
-        local_path = storage.get_path(record.storage_uri)
-        if not (local_path and os.path.exists(local_path)):
-            # Fallback: Orijinal dosya adı ile arama (storage_dir, 'Yeni klasör', tests vb.)
-            candidate_dirs = [
-                Path(local_path).parent if local_path else None,
-                Path(get_settings().storage_dir) if hasattr(get_settings(), "storage_dir") else None,
-                Path("storage/raw"),
-                Path("storage"),
-                Path("Yeni klasör"),
-                Path("tests/fixtures"),
-            ]
-            for c_dir in candidate_dirs:
-                if c_dir and c_dir.exists() and record.file_name:
-                    cand = (c_dir / record.file_name).resolve()
-                    if cand.exists() and cand.is_file():
-                        local_path = str(cand)
-                        # Orijinal hedefe kopyala (ileriki istekler için hazır olsun)
-                        if hasattr(storage, "get_path"):
-                            try:
-                                orig_target = Path(storage.get_path(record.storage_uri))
-                                if not orig_target.exists():
-                                    orig_target.parent.mkdir(parents=True, exist_ok=True)
-                                    import shutil
-                                    shutil.copy2(cand, orig_target)
-                                    local_path = str(orig_target)
-                            except Exception:
-                                pass
-                        break
+    if local_path and os.path.exists(local_path):
+        media_type, _ = mimetypes.guess_type(local_path)
+        if not media_type:
+            media_type = "audio/wav"
+        return FileResponse(path=local_path, media_type=media_type, filename=record.file_name)
 
-        if local_path and os.path.exists(local_path):
-            media_type, _ = mimetypes.guess_type(local_path)
-            if not media_type:
-                media_type = "audio/wav"
-            return FileResponse(path=local_path, media_type=media_type, filename=record.file_name)
-    except Exception as e:
-        logger.warning("Storage get_path note: %s", e)
-
-    # 2. Disk yolu bulunamazsa bellek akışı veya depolama adaptöründen doğrudan oku
-    if hasattr(storage, "get_bytes"):
-        try:
-            audio_bytes = storage.get_bytes(record.storage_uri)
-            if audio_bytes and len(audio_bytes) > 0:
-                media_type, _ = mimetypes.guess_type(record.file_name)
-                if not media_type:
-                    media_type = "audio/wav"
-                return Response(content=audio_bytes, media_type=media_type)
-        except Exception as e:
-            logger.info("Storage get_bytes note: %s", e)
+    if audio_bytes and len(audio_bytes) > 0:
+        media_type, _ = mimetypes.guess_type(record.file_name)
+        if not media_type:
+            media_type = "audio/wav"
+        return Response(content=audio_bytes, media_type=media_type)
 
     raise HTTPException(
         status_code=404,
-        detail=f"'{record.file_name}' ses dosyası depolamada bulunamadı (saklama süresi/retention dolmuş veya silinmiş olabilir)."
+        detail=f"'{record.file_name}' ses dosyası depolamada bulunamadı (saklama süresi/retention dolmuş veya silinmiş olabilir).",
     )
 
 
@@ -445,6 +459,7 @@ async def reanalyze_audio_job(
     """
     Sunucuda kayıtlı ses dosyasını (storage_uri) kullanarak analizi yeni konuşmacı sayısı ile yeniden başlatır.
     Tarayıcıda dosya verisi tutulmasına gerek kalmaz; sayfa yenilense de çalışır.
+    Dosya yalnızca storage_uri üzerinden okunur; yol aşımı engellenmiştir.
     """
     try:
         record_uuid = uuid.UUID(job_id)
@@ -456,30 +471,7 @@ async def reanalyze_audio_job(
         raise HTTPException(status_code=404, detail="Ses analizi görevi bulunamadı.")
 
     storage = get_storage_adapter()
-    file_bytes = None
-    try:
-        local_path = storage.get_path(record.storage_uri)
-        if local_path and os.path.exists(local_path):
-            with open(local_path, "rb") as f:
-                file_bytes = f.read()
-    except Exception:
-        pass
-
-    if file_bytes is None:
-        candidate_dirs = [
-            Path(get_settings().storage_dir) if hasattr(get_settings(), "storage_dir") else None,
-            Path("storage/raw"),
-            Path("storage"),
-            Path("Yeni klasör"),
-            Path("tests/fixtures"),
-        ]
-        for c_dir in candidate_dirs:
-            if c_dir and c_dir.exists() and record.file_name:
-                cand = (c_dir / record.file_name).resolve()
-                if cand.exists() and cand.is_file():
-                    with open(cand, "rb") as f:
-                        file_bytes = f.read()
-                    break
+    _, file_bytes = _load_job_audio(storage, record)
 
     if not file_bytes:
         raise HTTPException(
@@ -488,7 +480,7 @@ async def reanalyze_audio_job(
         )
 
     job_service = JobService(storage=storage, repository=repository)
-    new_job = await job_service.create_job(
+    new_job_id = await job_service.create_job(
         file_name=record.file_name,
         file_bytes=file_bytes,
         num_speakers=payload.num_speakers,
@@ -498,21 +490,21 @@ async def reanalyze_audio_job(
     if use_redis_stream:
         stream_adapter = RedisStreamAdapter()
         await stream_adapter.publish_job(
-            job_id=str(new_job.id),
+            job_id=str(new_job_id),
             file_name=record.file_name,
             num_speakers=payload.num_speakers,
         )
     else:
         background_tasks.add_task(
             run_pipeline_background,
-            str(new_job.id),
+            str(new_job_id),
             record.file_name,
             file_bytes,
             payload.num_speakers,
         )
 
     return JobCreateResponse(
-        job_id=str(new_job.id),
+        job_id=str(new_job_id),
         file_name=record.file_name,
         status="PENDING",
         message=f"Ses analizi {payload.num_speakers} konuşmacı ile sunucu üzerinden yeniden başlatıldı.",
