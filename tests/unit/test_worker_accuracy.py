@@ -112,7 +112,7 @@ async def test_simulated_4000_jobs_stream_workers_zero_duplicates(monkeypatch):
     monkeypatch.setenv("STREAM_CLAIM_IDLE_MS", "900000")
     monkeypatch.setenv("STREAM_CLAIM_INTERVAL_SEC", "1")
 
-    fake_server = fakeredis.aioredis.FakeServer()
+    fake_server = fakeredis.FakeServer() if hasattr(fakeredis, "FakeServer") else fakeredis.aioredis.FakeServer()
     fake_redis = fakeredis.aioredis.FakeRedis(server=fake_server, decode_responses=True)
 
     stream_adapter = RedisStreamAdapter(redis_client=fake_redis)
